@@ -1,0 +1,9 @@
+Для поддержки распознавания текста программа требует наличия в системе пакетов tesseract-ocr и python3-imaging
+Для их установки в Ubuntu воспользуйтесь командой:
+sudo apt-get install tesseract-ocr python3-imaging
+
+Запуск программы:
+python test.py имя_файла
+
+Файлов можно задать несколько, допустимо также
+python test.py *
