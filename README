@@ -1,6 +1,8 @@
-Для поддержки распознавания текста программа требует наличия в системе пакетов tesseract-ocr и python3-imaging
-Для их установки в Ubuntu воспользуйтесь командой:
-sudo apt-get install tesseract-ocr python3-imaging
+Программа извлекает номера банковских счетов из файлов Excel, PDF и сканированных изображений
+Для поддержки распознавания текста программа требует наличия в системе пакетов tesseract-ocr и python3-pil
+Для поддержки файлов Excel требуется пакет python3-xlrd
+Для установки всех зависимостей в Ubuntu воспользуйтесь командой:
+sudo apt-get install tesseract-ocr python3-pil python3-xlrd
 
 Запуск программы:
 python test.py имя_файла

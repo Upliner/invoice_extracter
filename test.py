@@ -1,6 +1,6 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
-import os, sys
+import os, sys, xlrd
 from pytesseract import image_to_string
 from PIL import Image
 from PyPDF2 import PdfFileReader
@@ -10,7 +10,7 @@ if len(sys.argv) <= 1:
 
 def processWords(words):
     for w in words:
-        if '8888' in w: print(w);
+        if len(w) == 20 and '810' in w: print(w);
 
 
 def processImage(filename):
@@ -22,6 +22,13 @@ def processPDF(filename):
         for i in range(0,rdr.getNumPages()):
             processWords(rdr.getPage(i).extractText().split())
 
+def processExcel(filename):
+    wbk = xlrd.open_workbook(filename)
+    for sht in wbk.sheets():
+        for row in range(sht.nrows):
+            for col in range(sht.ncols):
+                processWords(str(sht.cell_value(row,col)).split())
+
 for i in range(1,len(sys.argv)):
     f, ext = os.path.splitext(sys.argv[i])
     f = sys.argv[i]
@@ -30,5 +37,7 @@ for i in range(1,len(sys.argv)):
         processImage(f)
     elif (ext == '.pdf'):
         processPDF(f)
+    elif (ext in ['.xls', '.xlsx']):
+        processExcel(f)
     else:
         sys.stderr.write("%s: unknown extension\n" % f)
