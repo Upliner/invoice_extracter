@@ -1861,14 +1861,14 @@ def createRectangleAccessor(name, fallback):
             )
 
 def parseCMap(cstr):
-    rr = re.search("\nbegincmap\n(?:.*?\n)?[0-9]* beginbfchar\n(.*?)\nendbfchar\n(?:.*?\n)?endcmap\n", cstr, re.DOTALL)
+    rr = re.search("[ \n]begincmap\n(?:.*?\n)?[0-9]* beginbfchar\n(.*?)\nendbfchar\n(?:.*?\n)?endcmap[ \n]", cstr, re.DOTALL)
     if rr == None: return None
     result = {}
     cstr = rr.group(1)
     for entry in cstr.split("\n"):
         rr = re.match("\\s*<([0-9a-fA-F]+)>\\s+<([0-9a-fA-F]+)>\\s*", entry)
         if rr == None: continue
-        result[int(rr.group(1), base=16)] = unichr(int(rr.group(2), base=16))
+        result[int(rr.group(1), base=16)] = chr(int(rr.group(2), base=16))
     return result
 
 
@@ -2394,7 +2394,11 @@ class PageObject(DictionaryObject):
                 for c in text:
                     newText += cmap.get(ord_(c),"?")
                 return newText
-            return ""
+            else:
+                newText = ""
+                for c in text:
+                    newText += chr(c)
+                return newText
 
         for operands, operator in content.operations:
             if operator == b_("Tf"):
@@ -2407,7 +2411,7 @@ class PageObject(DictionaryObject):
                 except KeyError:
                     cmap = None
             elif operator == b_("Tj"):
-                if len(text) > 0 and not text.endswith("\n"): text += " "
+                #if len(text) > 0 and not text.endswith("\n"): text += " "
                 text += translate(operands[0])
             elif operator == b_("T*"):
                 text += "\n"

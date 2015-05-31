@@ -1,11 +1,8 @@
-Программа извлекает номера банковских счетов из файлов Excel, PDF и сканированных изображений
-Для поддержки распознавания текста программа требует наличия в системе пакетов tesseract-ocr и python3-pil
-Для поддержки файлов Excel требуется пакет python3-xlrd
-Для установки всех зависимостей в Ubuntu воспользуйтесь командой:
-sudo apt-get install tesseract-ocr python3-pil python3-xlrd
+Программа извлекает данные счетов на оплату покупателям
+
+Для работы программа требует следующие пакеты:
+tesseract-ocr tesseract-ocr-rus python-pil python-xlrd
 
 Запуск программы:
-python test.py имя_файла
+python invoice_extracter.py имена_файлов
 
-Файлов можно задать несколько, допустимо также
-python test.py *

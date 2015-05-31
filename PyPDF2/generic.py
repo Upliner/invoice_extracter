@@ -272,21 +272,11 @@ def createStringObject(string):
     if isinstance(string, utils.string_type):
         return TextStringObject(string)
     elif isinstance(string, utils.bytes_type):
-        try:
-            if string.startswith(codecs.BOM_UTF16_BE):
-                retval = TextStringObject(string.decode("utf-16"))
-                retval.autodetect_utf16 = True
-                return retval
-            else:
-                # This is probably a big performance hit here, but we need to
-                # convert string objects into the text/unicode-aware version if
-                # possible... and the only way to check if that's possible is
-                # to try.  Some strings are strings, some are just byte arrays.
-                retval = TextStringObject(decode_pdfdocencoding(string))
-                retval.autodetect_pdfdocencoding = True
-                return retval
-        except UnicodeDecodeError:
-            return ByteStringObject(string)
+        if string.startswith(codecs.BOM_UTF16_BE):
+            retval = TextStringObject(string.decode("utf-16"))
+            retval.autodetect_utf16 = True
+            return retval
+        return ByteStringObject(string)
     else:
         raise TypeError("createStringObject should have str or unicode arg")
 
@@ -1152,17 +1142,6 @@ def encode_pdfdocencoding(unicode_string):
         except KeyError:
             raise UnicodeEncodeError("pdfdocencoding", c, -1, -1,
                     "does not exist in translation table")
-    return retval
-
-
-def decode_pdfdocencoding(byte_array):
-    retval = u_('')
-    for b in byte_array:
-        c = _pdfDocEncoding[ord_(b)]
-        if c == u_('\u0000'):
-            raise UnicodeDecodeError("pdfdocencoding", utils.barray(b), -1, -1,
-                    "does not exist in translation table")
-        retval += c
     return retval
 
 _pdfDocEncoding = (
