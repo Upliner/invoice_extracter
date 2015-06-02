@@ -15,19 +15,21 @@ from io import BytesIO
 if len(sys.argv) <= 1:
    print("Usege: python test.py file1 [file2...]\n");
 
-# Данные нашей организации, при встрече в документах игнорируем их, ищем только данные контрагентов
+# Реквизиты нашей организации, при встрече в документах игнорируем их, ищем только данные контрагентов
 
 our = {
 u"ИНН": "7702818199",
-u"КПП": "770201001", # КПП может быть одинаковый у нас и у контрагента
+u"КПП": "770201001", 
+u"р/с": "40702810700120030086", 
+u"БИК": "044525201", 
+u"Корсчет": "30101810000000000201", 
 }
-
 
 # Алгоритм работы:
 # В первом проходе ищем надписи ИНН, КПП, БИК и переносим числа, следующие за ними в
 # соответствующие поля. 
 # Если не в первом проходе не найдены ИНН, КПП или БИК, тогда запускаем второй проход:
-# Первое десятизначное числоинтерпретируем как ИНН, первое девятизначное с первыми четырьмя 
+# Первое десятизначное число интерпретируем как ИНН, первое девятизначное с первыми четырьмя 
 # цифрами, совпадающими с ИНН - как КПП, первое девятизначное, начинающиеся с 04 -- как БИК
 #
 
@@ -37,9 +39,11 @@ class InvParseException(Exception):
 
 # Заполняет поле с именем fld и проверяет, чтобы в нём уже не присутствовало другое значение
 def fillField(pr, fld, value):
-    if value == None or (fld != u"КПП" and value == our.get(fld)): return
+    ourVal = our.get(fld)
+    if value == None or (fld == u"ИНН" and value == ourVal): return
     oldVal = pr.get(fld)
-    if oldVal != None and oldVal != value and value != our.get(fld) and oldVal != our.get(fld):
+    if value == ourVal and oldVal != ourVal: return
+    if oldVal != None and oldVal != value and value != ourVal and oldVal != ourVal:
        if fld == u"Счет": return
        raise InvParseException(u"Найдено несколько различных %s: %s и %s" % (fld, oldVal, value))
     pr[fld] = value
@@ -71,7 +75,7 @@ def processXlsCell(sht, row, col, pr):
     return processCellContent(content, getValueToTheRight, col, pr)
 
 # Находит ближайший LTTextLine справа от указанного
-def pdfFindRight(pdf, pl):
+def pdfFindRight(pdf, pl, distTresh = 10000):
     y = (pl.y0 + pl.y1) / 2
     result = None
     for obj in pdf:
@@ -82,23 +86,36 @@ def pdfFindRight(pdf, pl):
             if line.y0 > y or line.y1 < y or line.x0<=pl.x0: continue
             if result != None and result.x0 <= obj.x0: continue
             result = line
+    if result != None and result.x0 - pl.x1 > distTresh:
+        return None # Ближайший текстбокс слишком далеко от текущего
     return result
     
 def processPdfLine(pdf, pl, pr):
     content = pl.get_text()
-    def getValueToTheRight(pl):
-        pl = pdfFindRight(pdf, pl)
-        if pl == None: return (None, None)
-        return (pl.get_text(), pl)
+    #print((("(%i,%i,%i,%i) %s") % (pl.x0, pl.y0, pl.x1, pl.y1, content)).encode("utf-8"))
+    def getValueToTheRight(pdfLine):
+        pdfLine = pdfFindRight(pdf, pdfLine, 10000 if pdfLine == pl else 216)
+        if pdfLine == None: return (None, None)
+        return (pdfLine.get_text(), pdfLine)
     return processCellContent(content, getValueToTheRight, pl, pr)
 
 def processCellContent(content, getValueToTheRight, firstCell, pr):
     def getSecondValue():
+        # Значение может находиться как в текущей ячейке, так и в следующей
         try:
             return content.split(None, 2)[1]
         except IndexError:
             # В данной ячейке данных не найдено, проверяем ячейки/текстбоксы справа
             return getValueToTheRight(firstCell)[0]
+        #if val and len(val)<9 and re.match("[0-9]+$", val):
+        #    # Ни одно искомое числовое значение не может иметь меньше девяти знаков
+        #    # Предполагаем, что число может продолжаться в соседних ячейках (актуально для PDF)
+        #    v2, cell = getValueToTheRight(cell)
+        #    while v2 and re.match("[0-9]+$", v2):
+        #        val += v2
+        #        v2, cell = getValueToTheRight(cell)
+        #return val
+
     for fld, check in [[u"ИНН", checkInn], [u"КПП", checkKpp], [u"БИК", checkBic]]:
         if re.match(u"[^a-zA-Zа-яА-Я]?"  + fld + u"\\b", content, re.UNICODE | re.IGNORECASE):
             val = getSecondValue()
@@ -110,7 +127,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             check(val)
             fillField(pr, fld, val)
             return True
-    if re.match(u" *Счет *(на оплату|№)", content, re.UNICODE | re.IGNORECASE):
+    if re.match(u" *Сч[её]т *(на оплату|№|.*? от [0-9][0-9]?[\\. ])", content, re.UNICODE | re.IGNORECASE):
         text = content
         val, cell = getValueToTheRight(firstCell)
         while val != None:
@@ -143,8 +160,10 @@ def findBankAccounts(text, pr):
     hasIncomplete = False
     for w in text.split():
         if w == "3010": hasIncomplete = True
-        if len(w) == 20 and w[5:8] == "810" and re.match("[0-9]{20}", w):
-            processAcc(w)
+        if len(w) == 20 and re.match(u"[0-9О]{20}", w):
+            w = w.replace(u"О", "0") # Многие OCR-движки путают букву О с нулём
+            if w[5:8] == "810":
+                processAcc(w)
     
     if not u"р/с" in pr or hasIncomplete:
         # В некоторых документах р/с написан с пробелами
@@ -157,36 +176,46 @@ bndry = u"(?:\\b|[a-zA-Zа-яА-Я ])"
 def processText(text, pr):
     if not u"р/с" in pr:
         findBankAccounts(text, pr)
-    for inn in re.finditer(nap + u"ИНН *([0-9]{10}|[0-9]{12})\\b", text, re.UNICODE | re.IGNORECASE):
-        fillField(pr, u"ИНН", inn.group(1))
-    for kpp in re.finditer(nap + u"КПП *([0-9]{9})\\b", text, re.UNICODE | re.IGNORECASE):
-        fillField(pr, u"КПП", kpp.group(1))
-    for bic in re.finditer(nap + u"БИК *(04[0-9]{7})\\b", text, re.UNICODE | re.IGNORECASE):
-        fillField(pr, u"БИК", bic.group(1))
-    rr = re.search(u"^ *Счет *(на оплату|№|.*от.*).*", text, re.UNICODE | re.IGNORECASE | re.MULTILINE)
+    for fld, regexp in [
+            [u"ИНН", u"[0-9О]{10}|[0-9О]{12}"],
+            [u"КПП", u"[0-9О]{9}"],
+            [u"БИК", u"[0О]4[0-9О]{7}"]]:
+        for val in re.finditer(nap + fld + u" *(%s)\\b" % regexp, text, re.UNICODE | re.IGNORECASE):
+            fillField(pr, fld, val.group(1).replace(u"О", "0"))
+
+    rr = re.search(u"^ *Сч[её]т *(на оплату|№|.*?\\bот[0-9 ].*).*", text, re.UNICODE | re.IGNORECASE | re.MULTILINE)
     if rr: fillField(pr, u"Счет", rr.group(0))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
     if u"ИНН" not in pr and u"КПП" not in pr:
-        for rr in re.finditer(u"([0-9]{10}) *[/ ] *([0-9]{9})\\b", text, re.UNICODE):
-            if rr.group(1)[0:4] == rr.group(2)[0:4]:
-                fillField(pr, u"ИНН", rr.group(1))
-                fillField(pr, u"КПП", rr.group(2))
+        results = re.findall(u"([0-9О]{10}) *[\\\\\\[\\]\\|/ ] *([0-9О]{9})\\b", text, re.UNICODE)
+        results = [r for r in [v.replace(u"О", "0") for v in results]]
+        for inn, kpp in results:
+            if inn[0:4] == kpp[0:4]:
+                fillField(pr, u"ИНН", inn)
+                fillField(pr, u"КПП", kpp)
+        if len(results)>0 and u"ИНН" not in pr and u"КПП" not in pr:
+            for inn, kpp in results:
+                fillField(pr, u"ИНН", inn)
+                fillField(pr, u"КПП", kpp)
+            # Пар с совпадающими первыми цифрами не найдено, вставляем любые пары
+            
+
     # Если предыдущие шаги не дали никаких результатов, вставляем как ИНН, КПП и БИК
     # первые подходящие цифры
     if u"ИНН" not in pr:
-        rm = re.search(nap + u"\\b([0-9]{10}|[0-9]{12})\\b" + bndry, text, re.UNICODE)
-        if rm: fillField(pr, u"ИНН", rm.group(1))
+        rm = re.search(nap + u"\\b([0-9О]{10}|[0-9О]{12})\\b" + bndry, text, re.UNICODE)
+        if rm: fillField(pr, u"ИНН", rm.group(1).replace(u"О", "0"))
     #Ищем КПП только если ИНН десятизначный
     if u"КПП" not in pr and (u"ИНН" not in pr or len(pr[u"ИНН"]) == 10):
-        rm = re.search(u"\\b([0-9]{9})" + bndry, text, re.UNICODE)
-        if rm: fillField(pr, u"КПП", rm.group(1))
+        rm = re.search(u"\\b([0-9О]{9})" + bndry, text, re.UNICODE)
+        if rm: fillField(pr, u"КПП", rm.group(1).replace(u"О", "0"))
     if u"БИК" not in pr:
-        rm = re.search(u"\\b(04[0-9]{7})\\b" + bndry, text, re.UNICODE)
-        if rm: fillField(pr, u"БИК", rm.group(1))
+        rm = re.search(u"\\b([0О]4[0-9О]{7})\\b" + bndry, text, re.UNICODE)
+        if rm: fillField(pr, u"БИК", rm.group(1).replace(u"О", "0"))
 
 def processImage(image, pr):
-    debug = False
+    debug = True
     text = image_to_string(image, lang="rus").decode("utf-8")
     if debug:
         with open("invext-debug.txt","w") as f:
@@ -225,7 +254,7 @@ def processPDF(f, pr):
                     if isinstance(obj, LTImage):
                         processImage(Image.open(BytesIO(obj.stream.get_rawdata())))
             else:
-                if u"р/с" not in pr or u"ИНН" not in pr or u"КПП" not in pr or u"БИК" not in pr:
+                if u"р/с" not in pr or u"ИНН" not in pr or u"КПП" not in pr or u"БИК" not in pr or u"Счет" not in pr:
                     # Текст в файле есть, но его не удалось полностью распознать, используем fallback метод
                     itc.process_page(page)
                     text = parsedTextStream.getvalue().decode("utf-8")
@@ -258,7 +287,7 @@ def printInvoiceData(pr):
     for fld in [u"ИНН", u"КПП", u"р/с", u"БИК", u"Корсчет"]:
         val = pr.get(fld)
         if (val != None):
-            print(("%s: %s" % (fld, val)))
+            print("%s: %s" % (fld, val))
             
 
 for i in range(1,len(sys.argv)):
@@ -266,7 +295,7 @@ for i in range(1,len(sys.argv)):
     f = sys.argv[i]
     print(f)
     ext = ext.lower()
-    pr = {}
+    pr = {} # Parse result
     try:
         if (ext in ['.png','.bmp','.jpg','.gif']):
             processImage(Image.open(f), pr)
@@ -283,3 +312,4 @@ for i in range(1,len(sys.argv)):
     except InvParseException as e:
         print(unicode(e))
     printInvoiceData(pr)
+    sys.stdout.flush()
