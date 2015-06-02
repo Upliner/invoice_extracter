@@ -43,6 +43,7 @@ class InvParseException(Exception):
 def fillField(pr, fld, value):
     if value == None: return
     ourVal = our.get(fld)
+    if fld == u"ИНН" and value == ourVal: return
     oldVal = pr.get(fld)
     if value == ourVal and oldVal != ourVal: return
     if oldVal != None and oldVal != value and value != ourVal and oldVal != ourVal:
