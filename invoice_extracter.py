@@ -13,7 +13,7 @@ from PIL import Image
 from io import BytesIO
 
 if len(sys.argv) <= 1:
-   print("Usege: python test.py file1 [file2...]\n");
+   print("Usage: python test.py file1 [file2...]\n");
 
 # Реквизиты нашей организации, при встрече в документах игнорируем их, ищем только данные контрагентов
 
