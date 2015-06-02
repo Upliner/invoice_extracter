@@ -225,48 +225,48 @@ def processImage(image, pr):
     processText(text, pr)
 
 def processPDF(f, pr):
-        debug = False
-        parser = PDFParser(f)
-        document = PDFDocument(parser)
-        rsrcmgr = PDFResourceManager()
-        laparams = LAParams()
-        daggr = PDFPageAggregator(rsrcmgr, laparams=laparams)
-        parsedTextStream = BytesIO()
-        dtc = TextConverter(rsrcmgr, parsedTextStream, codec="utf-8", laparams=laparams)
-        iaggr = PDFPageInterpreter(rsrcmgr, daggr)
-        itc = PDFPageInterpreter(rsrcmgr, dtc)
-        for page in PDFPage.create_pages(document):
-            iaggr.process_page(page)
-            layout = daggr.get_result()
-            x0, y0, x1, y1 = (sys.maxint, sys.maxint, -sys.maxint, -sys.maxint) # Text bbox
+    debug = False
+    parser = PDFParser(f)
+    document = PDFDocument(parser)
+    rsrcmgr = PDFResourceManager()
+    laparams = LAParams()
+    daggr = PDFPageAggregator(rsrcmgr, laparams=laparams)
+    parsedTextStream = BytesIO()
+    dtc = TextConverter(rsrcmgr, parsedTextStream, codec="utf-8", laparams=laparams)
+    iaggr = PDFPageInterpreter(rsrcmgr, daggr)
+    itc = PDFPageInterpreter(rsrcmgr, dtc)
+    for page in PDFPage.create_pages(document):
+        iaggr.process_page(page)
+        layout = daggr.get_result()
+        x0, y0, x1, y1 = (sys.maxint, sys.maxint, -sys.maxint, -sys.maxint) # Text bbox
+        for obj in layout:
+            if isinstance(obj, LTTextBox):
+                x0 = min(x0, obj.x0)
+                y0 = min(y0, obj.y0)
+                x1 = max(x1, obj.x1)
+                y1 = max(y1, obj.y1)
+                for line in obj:
+                    if isinstance(line, LTTextLine):
+                        processPdfLine(layout, line, pr)
+        if u"р/с" not in pr or u"ИНН" not in pr or u"КПП" not in pr or u"БИК" not in pr or u"Счет" not in pr:
+            # Текст в файле есть, но его не удалось полностью распознать
+            # Возможно это плохо распознанный PDF, ищем картинки, перекрывающие всю страницу
             for obj in layout:
-                if isinstance(obj, LTTextBox):
-                    x0 = min(x0, obj.x0)
-                    y0 = min(y0, obj.y0)
-                    x1 = max(x1, obj.x1)
-                    y1 = max(y1, obj.y1)
-                    for line in obj:
-                        if isinstance(line, LTTextLine):
-                            processPdfLine(layout, line, pr)
-            if u"р/с" not in pr or u"ИНН" not in pr or u"КПП" not in pr or u"БИК" not in pr or u"Счет" not in pr:
-                    # Текст в файле есть, но его не удалось полностью распознать
-                    # Возможно это плохо распознанный PDF, ищем картинки, перекрывающие всю страницу
-                    for obj in layout:
-                        if isinstance(obj, LTFigure):
-                            for img in obj:
-                                if (isinstance(img, LTImage) and
-                                        img.x0<x0 and img.y0<y0 and img.x1>x1 and img.y1>y1):
-                                    processImage(Image.open(BytesIO(img.stream.get_rawdata())), pr)
-                                    break
-                    else:
-                        # Подходящих картинок нет, используем fallback метод
-                        itc.process_page(page)
-                        text = parsedTextStream.getvalue().decode("utf-8")
-                        if debug:
-                            with open("invext-debug.txt","w") as f:
-                                f.write(text.encode("utf-8"))
-                        processText(text, pr)
-                        parsedTextStream = BytesIO()
+                if isinstance(obj, LTFigure):
+                    for img in obj:
+                        if (isinstance(img, LTImage) and
+                                img.x0<x0 and img.y0<y0 and img.x1>x1 and img.y1>y1):
+                            processImage(Image.open(BytesIO(img.stream.get_rawdata())), pr)
+                            break
+            else:
+                # Подходящих картинок нет, используем fallback метод
+                itc.process_page(page)
+                text = parsedTextStream.getvalue().decode("utf-8")
+                if debug:
+                    with open("invext-debug.txt","w") as f:
+                        f.write(text.encode("utf-8"))
+                processText(text, pr)
+                parsedTextStream = BytesIO()
 
 def processExcel(filename, pr):
     wbk = xlrd.open_workbook(filename)
