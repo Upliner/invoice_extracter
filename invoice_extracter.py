@@ -108,14 +108,14 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
     for fld, check in [[u"ИНН", checkInn], [u"КПП", checkKpp], [u"БИК", checkBic]]:
         if re.match(u"[^a-zA-Zа-яА-Я]?"  + fld + u"\\b", content, re.UNICODE | re.IGNORECASE):
             val = getSecondValue()
-            if val == None: return False
+            if val == None: return
             rm = re.match("[0-9]+", val)
-            if not rm: return False
+            if not rm: return
             val = rm.group(0)
-            if val == our.get(fld): return False
+            if val == our.get(fld): return
             check(val)
             fillField(pr, fld, val)
-            return True
+            return
     if re.match(u" *Сч[её]т *(на оплату|№|.*? от [0-9][0-9]?[\\. ])", content, re.UNICODE | re.IGNORECASE):
         text = content
         val, cell = getValueToTheRight(firstCell)
@@ -124,21 +124,22 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             text += val
             val, cell = getValueToTheRight(cell)
         fillField(pr, u"Счет", text.strip().replace("\n"," ").replace("  "," "))
-        return True
+        return
     if re.match(u"ИНН */ *КПП\\b", content, re.UNICODE | re.IGNORECASE):
         val = getSecondValue()
-        if val == None: return False
+        if val == None: return
         rm = re.match("([0-9]{10}) */ *([0-9]{9})\\b", val, re.UNICODE)
         if rm:
             rm = re.match("([0-9]{12}) */?\\b", val, re.UNICODE)
-            if rm == None: return False
+            if rm == None: return
             checkInn(rm.group(1))
             fillField(pr, u"ИНН", rm.group(1))
         checkInn(rm.group(1))
         fillField(pr, u"ИНН", rm.group(1))
         checkKpp(rm.group(2))
         fillField(pr, u"КПП", rm.group(2))
-    return False
+        return
+    findBankAccounts(content, pr)
 
 def findBankAccounts(text, pr):
     def processAcc(w):
@@ -228,17 +229,10 @@ def processPDF(f, pr):
             hasText = False
             for obj in layout:
                 if isinstance(obj, LTTextBox):
-                    txt = obj.get_text().strip()
-                    if len(txt) > 0: hasText = True
-                    else: continue
-
-                    foundInfo = False
-
+                    hasText = True
                     for line in obj:
                         if isinstance(line, LTTextLine):
-                            if processPdfLine(layout, line, pr):
-                                foundInfo = True
-                    if not foundInfo: findBankAccounts(txt, pr)
+                            processPdfLine(layout, line, pr)
             if not hasText:
                 # В pdf-файле отсутствует текст, возможно присутствуют картинки, которые можно прогнать через OCR
                 for obj in layout:
@@ -262,8 +256,7 @@ def processExcel(filename, pr):
     for sht in wbk.sheets():
         for row in range(sht.nrows):
             for col in range(sht.ncols):
-                if not processXlsCell(sht, row, col, pr):
-                    findBankAccounts(unicode(sht.cell_value(row,col)), pr)
+                processXlsCell(sht, row, col, pr)
 
 # TODO: Парсинг из XML, без конвертации в PDF
 def processMsWord(filename, pr):
