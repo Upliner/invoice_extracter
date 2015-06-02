@@ -59,6 +59,12 @@ def checkBic(val):
     if len(val) != 9 or not val.startswith("04"):
         raise InvParseException(u"Найден некорректный БИК: %s" % val)
 
+# Убрать лишние данные из номера счёта
+def stripInvoiceNumber(num):
+    m = re.search(ur"\bот:? *[0-3]?\d(\.[0-1]\d\.| *[а-яА-Я]* )(20)?\d\d( *г([г\.]|ода?)?)?", num, re.UNICODE)
+    if m: return num[0:m.end()]
+    return num
+
 def processXlsCell(sht, row, col, pr):
     content = unicode(sht.cell_value(row, col))
     def getValueToTheRight(col):
@@ -123,7 +129,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             text += " "
             text += val
             val, cell = getValueToTheRight(cell)
-        fillField(pr, u"Счет", text.strip().replace("\n"," ").replace("  "," "))
+        fillField(pr, u"Счет", stripInvoiceNumber(text.strip().replace("\n"," ").replace("  "," ")))
         return
     if re.match(u"ИНН */ *КПП\\b", content, re.UNICODE | re.IGNORECASE):
         val = getSecondValue()
@@ -174,7 +180,7 @@ def processText(text, pr):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
     rr = re.search(u"^ *Сч[её]т *(на оплату|№|.*?\\bот *[0-9]).*", text, re.UNICODE | re.IGNORECASE | re.MULTILINE)
-    if rr: fillField(pr, u"Счет", rr.group(0))
+    if rr: fillField(pr, u"Счет", stripInvoiceNumber(rr.group(0)))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
     if u"ИНН" not in pr and u"КПП" not in pr:
