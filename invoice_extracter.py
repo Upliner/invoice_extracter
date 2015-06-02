@@ -7,7 +7,7 @@ from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfparser import PDFParser
 from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
 from pdfminer.converter import PDFPageAggregator, TextConverter
-from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTTextContainer, LTImage
+from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTTextContainer, LTFigure, LTImage
 from pytesseract import image_to_string
 from PIL import Image
 from io import BytesIO
@@ -184,10 +184,10 @@ def processText(text, pr):
                 fillField(pr, u"ИНН", inn)
                 fillField(pr, u"КПП", kpp)
         if len(results)>0 and u"ИНН" not in pr and u"КПП" not in pr:
+            # Пар с совпадающими первыми цифрами не найдено, вставляем любые пары
             for inn, kpp in results:
                 fillField(pr, u"ИНН", inn)
                 fillField(pr, u"КПП", kpp)
-            # Пар с совпадающими первыми цифрами не найдено, вставляем любые пары
             
 
     # Если предыдущие шаги не дали никаких результатов, вставляем как ИНН, КПП и БИК
@@ -195,7 +195,7 @@ def processText(text, pr):
     if u"ИНН" not in pr:
         rm = re.search(nap + u"\\b([0-9О]{10}|[0-9О]{12})\\b" + bndry, text, re.UNICODE)
         if rm: fillField(pr, u"ИНН", rm.group(1).replace(u"О", "0"))
-    #Ищем КПП только если ИНН десятизначный
+    # Ищем КПП только если ИНН десятизначный
     if u"КПП" not in pr and (u"ИНН" not in pr or len(pr[u"ИНН"]) == 10):
         rm = re.search(u"\\b([0-9О]{9})" + bndry, text, re.UNICODE)
         if rm: fillField(pr, u"КПП", rm.group(1).replace(u"О", "0"))
@@ -228,8 +228,10 @@ def processPDF(f, pr):
             hasText = False
             for obj in layout:
                 if isinstance(obj, LTTextBox):
-                    hasText = True
-                    txt = obj.get_text()
+                    txt = obj.get_text().strip()
+                    if len(txt) > 0: hasText = True
+                    else: continue
+
                     foundInfo = False
 
                     for line in obj:
@@ -238,10 +240,12 @@ def processPDF(f, pr):
                                 foundInfo = True
                     if not foundInfo: findBankAccounts(txt, pr)
             if not hasText:
-                # В pdf-файле отсутствует текст, возможно есть картинки, которые можно прогнать через OCR
+                # В pdf-файле отсутствует текст, возможно присутствуют картинки, которые можно прогнать через OCR
                 for obj in layout:
-                    if isinstance(obj, LTImage):
-                        processImage(Image.open(BytesIO(obj.stream.get_rawdata())))
+                    if isinstance(obj, LTFigure):
+                        for subobj in obj:
+                            if isinstance(subobj, LTImage):
+                                processImage(Image.open(BytesIO(subobj.stream.get_rawdata())), pr)
             else:
                 if u"р/с" not in pr or u"ИНН" not in pr or u"КПП" not in pr or u"БИК" not in pr or u"Счет" not in pr:
                     # Текст в файле есть, но его не удалось полностью распознать, используем fallback метод
