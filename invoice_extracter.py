@@ -108,14 +108,19 @@ def processPdfLine(pdf, pl, pr):
         return (pdfLine.get_text(), pdfLine)
     processCellContent(content, getValueToTheRight, pl, pr)
 
+def parse(num):
+    return float(re.sub(ur"руб\.?| ","", num).replace(",",".").strip())
+
 def processCellContent(content, getValueToTheRight, firstCell, pr):
-    def getSecondValue():
+    def getSecondValue(separator = None):
         # Значение может находиться как в текущей ячейке, так и в следующей
         try:
-            return content.split(None, 2)[1]
+            val = content.split(separator, 2)[1].strip()
         except IndexError:
-            # В данной ячейке данных не найдено, проверяем ячейки/текстбоксы справа
-            return getValueToTheRight(firstCell)[0]
+            val = ""
+        if len(val) > 0: return val
+        # В данной ячейке данных не найдено, проверяем ячейки/текстбоксы справа
+        return getValueToTheRight(firstCell)[0]
 
     for fld, check in [[u"ИНН", checkInn], [u"КПП", checkKpp], [u"БИК", checkBic]]:
         if re.match(u"[^a-zA-Zа-яА-Я]?"  + fld + u"\\b", content, re.UNICODE | re.IGNORECASE):
@@ -128,7 +133,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             check(val)
             fillField(pr, fld, val)
             return
-    if re.match(u" *Сч[её]т *(на оплату|№|.*? от [0-9][0-9]?[\\. ])", content, re.UNICODE | re.IGNORECASE):
+    if re.match(u"Сч[её]т *(на оплату|№|.*? от [0-9][0-9]?[\\. ])", content, re.UNICODE | re.IGNORECASE):
         text = content
         val, cell = getValueToTheRight(firstCell)
         while val != None:
@@ -151,6 +156,51 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         checkKpp(rm.group(2))
         fillField(pr, u"КПП", rm.group(2))
         return
+    if (re.match(u"Итого|Всего", content, re.UNICODE | re.IGNORECASE) and
+           (u"без НДС" in content or not u"НДС" in content)):
+        if ":" in content:
+            val = getSecondValue(":")
+        else:
+            val = getValueToTheRight(firstCell)[0]
+        if val == None: return
+        try:
+            val = parse(val)
+        except ValueError:
+            return
+        oldTotal = pr.get(u"Итого")
+        if (val == pr.get(u"ИтогоБезНДС")): return
+        if (val == pr.get(u"ИтогоСНДС")): return
+        if oldTotal != None:
+            if oldTotal != val:
+                pr[u"ИтогоБезНДС"] = min(val, oldTotal)
+                pr[u"ИтогоСНДС"] = max(val, oldTotal)
+                del pr[u"Итого"]
+        else:
+            pr[u"Итого"] = val
+        return
+    if u"НДС" in content:
+        if content == u"Без НДС" or content == u"Без налога (НДС)":
+            pr[u"СтавкаНДС"] = u"БезНДС"
+            pr[u"СуммаНДС"] = 0
+        if "18%" in content: pr[u"СтавкаНДС"] = u"18%"
+        if "10%" in content: pr[u"СтавкаНДС"] = u"10%"
+        if "0%"  in content: pr[u"СтавкаНДС"] = u"0%"; pr[u"СуммаНДС"] = 0
+        if re.match(ur"(Всего|Итого|Сумма|в т\.ч\.|в том числе).*?", content, re.UNICODE | re.IGNORECASE):
+            if ":" in content:
+                val = getSecondValue(":")
+            else:
+                val = getValueToTheRight(firstCell)[0]
+            if (re.match(ur"Без", content, re.IGNORECASE)):
+                pr[u"СтавкаНДС"] = u"БезНДС"
+                pr[u"СуммаНДС"] = 0
+                return 
+            try:
+                val = parse(val)
+            except ValueError:
+                return
+            pr[u"СуммаНДС"] = val
+            return
+        
     findBankAccounts(content, pr)
 
 def findBankAccounts(text, pr):
@@ -290,7 +340,8 @@ def processMsWord(filename, pr):
 def printInvoiceData(pr):
     if u"Счет" in pr:
         print(pr[u"Счет"])
-    for fld in [u"ИНН", u"КПП", u"р/с", u"БИК", u"Корсчет"]:
+    for fld in [u"ИНН", u"КПП", u"р/с", u"БИК", u"Корсчет",
+            u"ИтогоБезНДС", u"СтавкаНДС", u"СуммаНДС", u"Итого", u"ИтогоСНДС"]:
         val = pr.get(fld)
         if (val != None):
             print("%s: %s" % (fld, val))
