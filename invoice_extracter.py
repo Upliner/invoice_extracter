@@ -75,7 +75,7 @@ def processXlsCell(sht, row, col, pr):
     return processCellContent(content, getValueToTheRight, col, pr)
 
 # Находит ближайший LTTextLine справа от указанного
-def pdfFindRight(pdf, pl, distTresh = 10000):
+def pdfFindRight(pdf, pl):
     y = (pl.y0 + pl.y1) / 2
     result = None
     for obj in pdf:
@@ -86,15 +86,12 @@ def pdfFindRight(pdf, pl, distTresh = 10000):
             if line.y0 > y or line.y1 < y or line.x0<=pl.x0: continue
             if result != None and result.x0 <= obj.x0: continue
             result = line
-    if result != None and result.x0 - pl.x1 > distTresh:
-        return None # Ближайший текстбокс слишком далеко от текущего
     return result
     
 def processPdfLine(pdf, pl, pr):
     content = pl.get_text()
-    #print((("(%i,%i,%i,%i) %s") % (pl.x0, pl.y0, pl.x1, pl.y1, content)).encode("utf-8"))
     def getValueToTheRight(pdfLine):
-        pdfLine = pdfFindRight(pdf, pdfLine, 10000 if pdfLine == pl else 216)
+        pdfLine = pdfFindRight(pdf, pdfLine)
         if pdfLine == None: return (None, None)
         return (pdfLine.get_text(), pdfLine)
     return processCellContent(content, getValueToTheRight, pl, pr)
@@ -107,14 +104,6 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         except IndexError:
             # В данной ячейке данных не найдено, проверяем ячейки/текстбоксы справа
             return getValueToTheRight(firstCell)[0]
-        #if val and len(val)<9 and re.match("[0-9]+$", val):
-        #    # Ни одно искомое числовое значение не может иметь меньше девяти знаков
-        #    # Предполагаем, что число может продолжаться в соседних ячейках (актуально для PDF)
-        #    v2, cell = getValueToTheRight(cell)
-        #    while v2 and re.match("[0-9]+$", v2):
-        #        val += v2
-        #        v2, cell = getValueToTheRight(cell)
-        #return val
 
     for fld, check in [[u"ИНН", checkInn], [u"КПП", checkKpp], [u"БИК", checkBic]]:
         if re.match(u"[^a-zA-Zа-яА-Я]?"  + fld + u"\\b", content, re.UNICODE | re.IGNORECASE):
