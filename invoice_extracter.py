@@ -66,19 +66,25 @@ def stripInvoiceNumber(num):
     return num
 
 def processXlsCell(sht, row, col, pr):
-    content = unicode(sht.cell_value(row, col))
+    try:
+        content = unicode(sht.cell_value(row, col))
+    except IndexError:
+        return
     def getValueToTheRight(col):
         col = col + 1
         val = None
         while col < sht.ncols:
-            val = sht.cell_value(row, col)
+            try:
+                val = sht.cell_value(row, col)
+            except IndexError:
+                return (None, None)
             if val != None and val != "" and val != 0: break
             col = col + 1
         if content == u"БИК" and type(val) in [int, float] and 40000000 <= val < 50000000:
             val = "0" + unicode(val) # Исправление БИКа в некоторых xls-файлах
         elif val != None: val = unicode(val)
         return (val, col)
-    return processCellContent(content, getValueToTheRight, col, pr)
+    processCellContent(content, getValueToTheRight, col, pr)
 
 # Находит ближайший LTTextLine справа от указанного
 def pdfFindRight(pdf, pl):
@@ -100,7 +106,7 @@ def processPdfLine(pdf, pl, pr):
         pdfLine = pdfFindRight(pdf, pdfLine)
         if pdfLine == None: return (None, None)
         return (pdfLine.get_text(), pdfLine)
-    return processCellContent(content, getValueToTheRight, pl, pr)
+    processCellContent(content, getValueToTheRight, pl, pr)
 
 def processCellContent(content, getValueToTheRight, firstCell, pr):
     def getSecondValue():
