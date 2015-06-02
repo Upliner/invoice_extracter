@@ -89,7 +89,7 @@ def pdfFindRight(pdf, pl):
     return result
     
 def processPdfLine(pdf, pl, pr):
-    content = pl.get_text()
+    content = pl.get_text().strip()
     def getValueToTheRight(pdfLine):
         pdfLine = pdfFindRight(pdf, pdfLine)
         if pdfLine == None: return (None, None)
@@ -128,7 +128,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
     if re.match(u"ИНН */ *КПП\\b", content, re.UNICODE | re.IGNORECASE):
         val = getSecondValue()
         if val == None: return
-        rm = re.match("([0-9]{10}) */ *([0-9]{9})\\b", val, re.UNICODE)
+        rm = re.match("([0-9]{10}) */? *([0-9]{9})\\b", val, re.UNICODE)
         if rm:
             rm = re.match("([0-9]{12}) */?\\b", val, re.UNICODE)
             if rm == None: return
@@ -170,10 +170,10 @@ def processText(text, pr):
             [u"ИНН", u"[0-9О]{10}|[0-9О]{12}"],
             [u"КПП", u"[0-9О]{9}"],
             [u"БИК", u"[0О]4[0-9О]{7}"]]:
-        for val in re.finditer(nap + fld + u" *(%s)\\b" % regexp, text, re.UNICODE | re.IGNORECASE):
+        for val in re.finditer(nap + fld + u"\\n? *(%s)\\b" % regexp, text, re.UNICODE | re.IGNORECASE):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
-    rr = re.search(u"^ *Сч[её]т *(на оплату|№|.*?\\bот[0-9 ].*).*", text, re.UNICODE | re.IGNORECASE | re.MULTILINE)
+    rr = re.search(u"^ *Сч[её]т *(на оплату|№|.*?\\bот *[0-9]).*", text, re.UNICODE | re.IGNORECASE | re.MULTILINE)
     if rr: fillField(pr, u"Счет", rr.group(0))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
@@ -258,14 +258,17 @@ def processExcel(filename, pr):
             for col in range(sht.ncols):
                 processXlsCell(sht, row, col, pr)
 
-# TODO: Парсинг из XML, без конвертации в PDF
 def processMsWord(filename, pr):
-    sp = subprocess.Popen(["antiword", "-a", "a4", filename], stdout=subprocess.PIPE, stderr=sys.stderr)
+    debug = False
+    sp = subprocess.Popen(["antiword", "-x", "db", filename], stdout=subprocess.PIPE, stderr=sys.stderr)
     stdoutdata, stderrdata = sp.communicate()
     if sp.poll() != 0:
         print("Call to antiword failed, errcode is " + sp.poll())
         return
-    processPDF(io.BytesIO(stdoutdata), pr)
+    if debug:
+        with open("invext-debug.xml","w") as f:
+            f.write(stdoutdata)
+    processText(stdoutdata.decode("utf-8"), pr)
 
 def printInvoiceData(pr):
     if u"Счет" in pr:
@@ -291,7 +294,7 @@ for i in range(1,len(sys.argv)):
             processExcel(f, pr)
         elif (ext in ['.doc']):
             processMsWord(f, pr)
-        elif (ext in ['.txt']):
+        elif (ext in ['.txt', '.xml']):
             with open(f, "rb") as f: processText(f.read().decode("utf-8"), pr)
         else:
             sys.stderr.write("%s: unknown extension\n" % f)
