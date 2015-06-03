@@ -1,7 +1,7 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
 
-import os, sys, xlrd, re, io, subprocess
+import os, sys, xlrd, re, io, subprocess, urllib2
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfparser import PDFParser
@@ -379,6 +379,19 @@ def processMsWord(filename, pr):
             f.write(stdoutdata)
     processText(stdoutdata.decode("utf-8"), pr)
 
+def getBicData(bic):
+    try:
+        f = urllib2.urlopen("http://www.bik-info.ru/bik_%s.html" % bic)
+        page = f.read().decode("cp1251")
+    except URLError:
+        return None
+    finally:
+        f.close()
+    return {
+        u"Корсчет": re.search(u"Корреспондентский счет: <b>(.*?)</b>", page).group(1),
+        u"Наименование": re.search(u"Наименование банка: <b>(.*?)</b>", page).group(1),
+    }
+
 def printInvoiceData(pr):
     if u"Счет" in pr:
         print(pr[u"Счет"])
@@ -389,6 +402,13 @@ def printInvoiceData(pr):
             print("%s: %s" % (fld, val))
     if not pr.get("СуммаПрописью"):
         print("Предупреждение: сумма прописью не найдена")
+
+    if u"БИК" in pr:
+        bicData = getBicData(pr[u"БИК"])
+        if bicData != None:
+            if bicData[u"Корсчет"] != bicData.get(u"Корсчет", u""):
+                print(u"Ошибка: не совпадает корсчёт")
+            print(u"Банк: " + bicData[u"Наименование"])
 
 for i in range(1,len(sys.argv)):
     f, ext = os.path.splitext(sys.argv[i])
