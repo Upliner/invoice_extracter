@@ -1,7 +1,7 @@
 Программа извлекает данные счетов на оплату покупателям
 
 Для работы программа требует следующие пакеты:
-tesseract-ocr tesseract-ocr-rus python-pil python-xlrd antiword
+tesseract-ocr tesseract-ocr-rus python-pil python-xlrd antiword python-pyparsing
 
 Запуск программы:
 python invoice_extracter.py имена_файлов

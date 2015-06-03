@@ -11,6 +11,7 @@ from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTTextContainer, LT
 from pytesseract import image_to_string
 from PIL import Image
 from io import BytesIO
+from mylingv import searchSums
 
 if len(sys.argv) <= 1:
    print("Usage: python test.py file1 [file2...]\n");
@@ -185,6 +186,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         checkKpp(rm.group(2))
         fillField(pr, u"КПП", rm.group(2))
         return
+    if u" рубл" in content: findSumsInWords(content, pr)
     if (re.match(u"Итого|Всего", content, drp) and
             (re.search(u"(с|без) *НДС", content, drp) or not u"НДС" in content)):
         if ":" in content: val = getSecondValue(":")
@@ -203,8 +205,17 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
                 return 
             fillField(pr, u"СуммаНДС", parse(val))
             return
-    
+
     findBankAccounts(content, pr)
+
+def findSumsInWords(text, pr):
+    for psum in searchSums(text):
+        if psum == pr.get("Итого"):
+           del pr.get["Итого"]
+        elif psum == pr.get("СуммаНДС"):
+            return
+        fillField(pr, u"ИтогоСНДС", psum)
+        pr["СуммаПрописью"] = True
 
 def findBankAccounts(text, pr):
     def processAcc(w):
@@ -250,6 +261,11 @@ def processText(text, pr):
                 fillField(pr, u"ИНН", inn)
                 fillField(pr, u"КПП", kpp)
         if len(results)>0 and u"ИНН" not in pr and u"КПП" not in pr:
+            for inn, kpp in results:
+               if inn[0:2] == kpp[0:2]:
+                   fillField(pr, u"ИНН", inn)
+                   fillField(pr, u"КПП", kpp)
+        if len(results)>0 and u"ИНН" not in pr and u"КПП" not in pr:
             # Пар с совпадающими первыми цифрами не найдено, вставляем любые пары
             for inn, kpp in results:
                 fillField(pr, u"ИНН", inn)
@@ -257,18 +273,23 @@ def processText(text, pr):
             
 
     # Если предыдущие шаги не дали никаких результатов, вставляем как ИНН, КПП и БИК
-    # первые подходящие цифры
+    # все подходящие цифры
     if u"ИНН" not in pr:
-        rm = re.search(nap + u"\\b([0-9О]{10}|[0-9О]{12})\\b" + bndry, text, drp)
-        if rm: fillField(pr, u"ИНН", rm.group(1).replace(u"О", "0"))
+        for rm in re.finditer(nap + u"\\b([0-9О]{10}|[0-9О]{12})\\b" + bndry, text, drp):
+            fillField(pr, u"ИНН", rm.group(1).replace(u"О", "0"))
+
+    if u"БИК" not in pr:
+        for rm in re.finditer(u"\\b([0О]4[0-9О]{7})\\b" + bndry, text, drp):
+            fillField(pr, u"БИК", rm.group(1).replace(u"О", "0"))
+
     # Ищем КПП только если ИНН десятизначный
     if u"КПП" not in pr and (u"ИНН" not in pr or len(pr[u"ИНН"]) == 10):
-        rm = re.search(u"\\b([0-9О]{9})" + bndry, text, drp)
-        if rm: fillField(pr, u"КПП", rm.group(1).replace(u"О", "0"))
-    if u"БИК" not in pr:
-        rm = re.search(u"\\b([0О]4[0-9О]{7})\\b" + bndry, text, drp)
-        if rm: fillField(pr, u"БИК", rm.group(1).replace(u"О", "0"))
+        for rm in re.finditer(u"\\b([0-9О]{9})" + bndry, text, drp):
+            val = rm.group(1).replace(u"О", "0")
+            if val == pr.get(u"БИК"): continue
+            fillField(pr, u"КПП", val)
 
+    # Ищем итоги, ставки и суммы НДС
     for r in re.finditer(ur"Итого( [а-яА-Я ]*)?:?\n? *([0-9\., ]*)", text, drp):
         if r.group(1) == None or (re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
             fillTotal(pr, parse(r.group(2).strip(".,")))
@@ -278,6 +299,8 @@ def processText(text, pr):
         fillField(pr, u"СуммаНДС", parse(r.group(2).strip(".,")))
     if re.search(ur"Без *(налога)? *\(?НДС", text, drp):
         fillField(pr, u"СтавкаНДС", u"БезНДС")
+    
+    findSumsInWords(text, pr)
 
 def processImage(image, pr):
     debug = False
@@ -358,7 +381,8 @@ def printInvoiceData(pr):
         val = pr.get(fld)
         if (val != None):
             print("%s: %s" % (fld, val))
-            
+    if not pr.get("СуммаПрописью"):
+        print("Предупреждение: сумма прописью не найдена")
 
 for i in range(1,len(sys.argv)):
     f, ext = os.path.splitext(sys.argv[i])
