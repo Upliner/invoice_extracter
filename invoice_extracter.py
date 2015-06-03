@@ -131,7 +131,7 @@ def pdfFindRight(pdf, pl):
             if result != None and result.x0 <= obj.x0: continue
             result = line
     return result
-    
+
 def processPdfLine(pdf, pl, pr):
     content = pl.get_text().strip()
     def getValueToTheRight(pdfLine):
@@ -236,7 +236,7 @@ def findBankAccounts(text, pr):
             w = w.replace(u"О", "0") # Многие OCR-движки путают букву О с нулём
             if w[5:8] == "810":
                 processAcc(w)
-    
+
     if not u"р/с" in pr or hasIncomplete:
         # В некоторых документах р/с написан с пробелами
         for w in re.finditer(u"[0-9]{4} *[0-9]810 *[0-9]{4} *[0-9]{4} *[0-9]{4}\\b", text, drp):
@@ -276,7 +276,7 @@ def processText(text, pr):
             for inn, kpp in results:
                 fillField(pr, u"ИНН", inn)
                 fillField(pr, u"КПП", kpp)
-            
+
 
     # Если предыдущие шаги не дали никаких результатов, вставляем как ИНН, КПП и БИК
     # все подходящие цифры
@@ -305,7 +305,7 @@ def processText(text, pr):
         fillField(pr, u"СуммаНДС", parse(r.group(2).strip(".,")))
     if re.search(ur"Без *(налога)? *\(?НДС", text, drp):
         fillField(pr, u"СтавкаНДС", u"БезНДС")
-    
+
     findSumsInWords(text, pr)
 
 def processImage(image, pr):
@@ -409,6 +409,8 @@ def printInvoiceData(pr):
             if bicData[u"Корсчет"] != bicData.get(u"Корсчет", u""):
                 print(u"Ошибка: не совпадает корсчёт")
             print(u"Банк: " + bicData[u"Наименование"])
+        else:
+            print(u"Ошибка: не удалось получить данные по БИК")
 
 for i in range(1,len(sys.argv)):
     f, ext = os.path.splitext(sys.argv[i])
