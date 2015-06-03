@@ -208,11 +208,15 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
 
     findBankAccounts(content, pr)
 
+def epsilonEquals(a,b):
+    if a == None or b == None: return False
+    return abs(a-b) < 0.0001
+
 def findSumsInWords(text, pr):
     for psum in searchSums(text):
-        if psum == pr.get("Итого"):
+        if epsilonEquals(psum, pr.get("Итого")):
            del pr.get["Итого"]
-        elif psum == pr.get("СуммаНДС"):
+        elif epsilonEquals(psum, pr.get("СуммаНДС")):
             return
         fillField(pr, u"ИтогоСНДС", psum)
         pr["СуммаПрописью"] = True
