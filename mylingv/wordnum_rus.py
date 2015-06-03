@@ -147,7 +147,7 @@ arrKop = [u"копейка", u"копейки", u"копеек"]
 rub = Or([CaselessLiteral(v) for v in arrRub + [u"руб"]])
 kop = Or([CaselessLiteral(v) for v in arrRub + [u"коп"]])
 
-sumParse = Group(number) + rub + Optional((Word(srange("[0-9]"), None, 1,2) | Group(lessHundredFem) | zero) + kop)
+sumParse = Group(number) + rub + (Word(srange("[0-9]"), None, 1,2) | Group(lessHundredFem) | zero) + kop
 
 def parseRubKop(pr):
     errs = []

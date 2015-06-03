@@ -52,11 +52,16 @@ def fillField(pr, fld, value):
        raise InvParseException(u"Найдено несколько различных %s: %s и %s" % (fld, oldVal, value))
     pr[fld] = value
 
+def epsilonEquals(a,b):
+    if a == None or b == None: return False
+    test = abs(a-b)
+    return test < 0.0001
+
 def fillTotal(pr, val):
     if val == None: return
+    if epsilonEquals(val, pr.get(u"ИтогоБезНДС")): return
+    if epsilonEquals(val, pr.get(u"ИтогоСНДС")): return
     oldTotal = pr.get(u"Итого")
-    if (val == pr.get(u"ИтогоБезНДС")): return
-    if (val == pr.get(u"ИтогоСНДС")): return
     if oldTotal != None:
         if oldTotal != val:
             fillField(pr, u"ИтогоБезНДС", min(val, oldTotal))
@@ -196,9 +201,10 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         return
     if u"НДС" in content:
         fillVatType(pr, content)
-        if re.match(ur"(Всего|Итого|Сумма|Включая|в т\.ч\.|в том числе).*?", content, drp):
+        if re.search(ur"(Всего|Итого|Сумма|Включая|в т\.ч\.|в том числе|НДС *\(?[0-9]*%\)? *:?).*?", content, drp):
             if ":" in content: val = getSecondValue(":")
             else: val = getValueToTheRight(firstCell)[0]
+            if val == None: return
             if (re.match(ur"Без", val, drp)):
                 fillField(pr, u"СтавкаНДС", u"БезНДС")
                 fillField(pr, u"СуммаНДС", 0)
@@ -208,15 +214,11 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
 
     findBankAccounts(content, pr)
 
-def epsilonEquals(a,b):
-    if a == None or b == None: return False
-    return abs(a-b) < 0.0001
-
 def findSumsInWords(text, pr):
     for psum in searchSums(text):
-        if epsilonEquals(psum, pr.get("Итого")):
-           del pr.get["Итого"]
-        elif epsilonEquals(psum, pr.get("СуммаНДС")):
+        if epsilonEquals(psum, pr.get(u"Итого")):
+           del pr[u"Итого"]
+        elif epsilonEquals(psum, pr.get(u"СуммаНДС")):
             return
         fillField(pr, u"ИтогоСНДС", psum)
         pr["СуммаПрописью"] = True
@@ -370,7 +372,7 @@ def processMsWord(filename, pr):
     sp = subprocess.Popen(["antiword", "-x", "db", filename], stdout=subprocess.PIPE, stderr=sys.stderr)
     stdoutdata, stderrdata = sp.communicate()
     if sp.poll() != 0:
-        print("Call to antiword failed, errcode is " + sp.poll())
+        print("Call to antiword failed, errcode is %i" % sp.poll())
         return
     if debug:
         with open("invext-debug.xml","w") as f:
