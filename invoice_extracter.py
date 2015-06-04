@@ -1,7 +1,7 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
 
-import os, sys, xlrd, re, io, subprocess, urllib2
+import os, sys, xlrd, re, io, subprocess, urllib2, argparse
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfparser import PDFParser
@@ -13,20 +13,36 @@ from PIL import Image
 from io import BytesIO
 from mylingv import searchSums
 
-if len(sys.argv) <= 1:
-   print("Usage: python test.py file1 [file2...]\n");
+parser = argparse.ArgumentParser(description='Extract data from invoices.')
 
-verbose = True
+parser.add_argument("files", metavar="file", type=str, nargs="+",
+                   help="file to process")
+parser.add_argument("-v", "--verbose", dest="verbose", action='store_true',
+                   help='print every mismatched INN')
+parser.add_argument("-c", "--credentails", type=unicode, default = None, dest="credfile",
+                   help="specify credentails file")
+
+args = parser.parse_args()
 
 # Реквизиты нашей организации, при встрече в документах игнорируем их, ищем только данные контрагентов
 
-our = {
-u"ИНН": "7702818199",
-u"КПП": "770201001", 
-u"р/с": "40702810700120030086", 
-u"БИК": "044525201", 
-u"Корсчет": "30101810000000000201", 
-}
+if args.credfile == None:
+    our = {
+        u"ИНН": "7702818199",
+        u"КПП": "770201001",
+        u"р/с": "40702810700120030086",
+        u"БИК": "044525201",
+        u"Корсчет": "30101810000000000201",
+    }
+else:
+    our = {}
+    with open(args.credfile,"r") as cf: data = cf.read()
+    data = data.decode("utf-8")
+    for line in data.split("\n"):
+        line = line.strip()
+        if len(line) > 0:
+            key, val = line.split(":", 1)
+            our[key] = val.strip()
 
 drp = re.UNICODE | re.IGNORECASE # default regexp parameters
 
@@ -74,7 +90,7 @@ def checkInn(val):
     # Проверка контрольных цифр
     def innControlDigit(idx):
         if int(val[idx]) != sum([int(i)*c for i,c in zip(val[:idx],innChk[-idx:])])%11%10:
-            if verbose: sys.stderr.write(u"Неверная контрольная цифра %i в ИНН: %r\n" % (idx+1, val))
+            if args.verbose: sys.stderr.write(u"Неверная контрольная цифра %i в ИНН: %r\n" % (idx+1, val))
             return False
         return True
     if len(val) == 10:
@@ -103,7 +119,7 @@ def fillField(pr, fld, value):
     if value == oldVal: return
     check = checkDict.get(fld)
     if check != None and not check(value):
-        if verbose: sys.stderr.write(u"%s: Найден некорректный %s: %s\n" % (pr["filename"], fld, value))
+        if args.verbose: sys.stderr.write(u"%s: Найден некорректный %s: %s\n" % (pr["filename"], fld, value))
         return
     if oldVal != None and value != ourVal and oldVal != ourVal:
        if fld == u"Счет": return
@@ -190,7 +206,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
     def getSecondValue(separator = None):
         # Значение может находиться как в текущей ячейке, так и в следующей
         try:
-            val = content.split(separator, 2)[1].strip()
+            val = content.split(separator, 1)[1].strip()
         except IndexError:
             val = ""
         if len(val) > 0: return val
@@ -263,23 +279,13 @@ def findSumsInWords(text, pr):
         pr["СуммаПрописью"] = True
 
 def findBankAccounts(text, pr):
-    def processAcc(w):
-       if w[0] == "4":
-           fillField(pr, u"р/с", w)
-       if w[0:5] == "30101":
-           fillField(pr, u"Корсчет", w)
-    hasIncomplete = False
-    for w in text.split():
-        if w == "3010": hasIncomplete = True
-        if len(w) == 20 and re.match(u"[0-9О]{20}", w):
-            w = w.replace(u"О", "0") # Многие OCR-движки путают букву О с нулём
-            if w[5:8] == "810":
-                processAcc(w)
-
-    if not u"р/с" in pr or hasIncomplete:
-        # В некоторых документах р/с написан с пробелами
-        for w in re.finditer(u"[0-9]{4} *[0-9]810 *[0-9]{4} *[0-9]{4} *[0-9]{4}\\b", text, drp):
-            processAcc(w.group(0).replace(" ", ""))
+    for w in re.finditer(u"[0-9О]{4} *[0-9О]81[0О] *[0-9О]{4} *[0-9О]{4} *[0-9О]{4}\\b", text, drp):
+        w = w.group(0).replace(u"О", "0") # Многие OCR-движки путают букву О с нулём
+        if w[5:8] == "810":
+            if w[0] == "4":
+                fillField(pr, u"р/с", w)
+            if w[0:5] == "30101":
+                fillField(pr, u"Корсчет", w)
 
 nap = u"[^a-zA-Zа-яА-Я]?" # Non-alpha prefix
 bndry = u"(?:\\b|[a-zA-Zа-яА-Я ])"
@@ -380,8 +386,7 @@ def processPDF(f, pr):
                     if isinstance(line, LTTextLine):
                         processPdfLine(layout, line, pr)
         if u"р/с" not in pr or u"ИНН" not in pr or u"КПП" not in pr or u"БИК" not in pr or u"Счет" not in pr:
-            # Текст в файле есть, но его не удалось полностью распознать
-            # Возможно это плохо распознанный PDF, ищем картинки, перекрывающие всю страницу
+            # Файл не удалось полностью распознать, ищем картинки, перекрывающие всю страницу
             for obj in layout:
                 if isinstance(obj, LTFigure):
                     for img in obj:
@@ -462,9 +467,9 @@ def printInvoiceData(pr):
         sys.stderr.write(u"%s: Предупреждение: сумма прописью не найдена\n" % pr["filename"])
 
 
-for i in range(1,len(sys.argv)):
-    f, ext = os.path.splitext(sys.argv[i])
-    f = sys.argv[i]
+for f in args.files:
+    f = f.decode("utf-8")
+    f_, ext = os.path.splitext(f)
     print(f)
     ext = ext.lower()
     pr = { "filename": f} # Parse result
