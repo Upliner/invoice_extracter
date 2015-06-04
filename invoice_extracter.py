@@ -159,7 +159,7 @@ def checkBicAcc(pr):
     else:
        prefix = "0" + pr[u"БИК"][4:6]
     fullAcc = prefix + pr[u"р/с"]
-    err = u"%s: Некорректный ключ номера счёта: %s\n" % (pr.get("filename"), pr[u"р/с"])
+    err = u"%s: Некорректный ключ номера счёта: %s\n" % (pr.get("filename", u"Ошибка"), pr[u"р/с"])
     if sum([int(i)*c for i,c in zip(fullAcc, accChk)]) % 10 != 0:
         sys.stderr.write(err)
         return False
@@ -256,7 +256,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         return
 
     for fld in [u"ИНН", u"КПП", u"БИК"]:
-        if re.match(u"[^a-zA-Zа-яА-Я]?"  + fld + u"\\b", content, drp):
+        if re.match(u"[^a-zA-Zа-яА-ЯёЁ]?"  + fld + u"\\b", content, drp):
             val = getSecondValue()
             if val == None: return
             rm = re.match("[0-9]+", val)
@@ -291,7 +291,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             if ":" in content: val = getSecondValue(":")
             else: val = getValueToTheRight(firstCell)[0]
             if val == None: return
-            if (re.match(ur"Без", val, drp)):
+            if (re.match(u"Без", val, drp)):
                 fillField(pr, u"СтавкаНДС", u"БезНДС")
                 fillField(pr, u"СуммаНДС", 0)
                 return 
@@ -318,8 +318,7 @@ def findBankAccounts(text, pr):
             if w[0:5] == "30101":
                 fillField(pr, u"Корсчет", w)
 
-nap = u"[^a-zA-Zа-яА-Я]?" # Non-alpha prefix
-bndry = u"(?:\\b|[a-zA-Zа-яА-Я ])"
+bndry = u"(?:\\b|[a-zA-Zа-яА-ЯёЁ ])"
 
 def processText(text, pr):
     if not u"р/с" in pr:
@@ -328,7 +327,7 @@ def processText(text, pr):
             [u"ИНН", u"[0-9О]{10}|[0-9О]{12}"],
             [u"КПП", u"[0-9О]{9}"],
             [u"БИК", u"[0О]4[0-9О]{7}"]]:
-        for val in re.finditer(nap + fld + u"\\n? *(%s)\\b" % regexp, text, drp):
+        for val in re.finditer("\\b" + fld + u"\\n? *(%s)\\b" % regexp, text, drp):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
     rr = re.search(u"^ *Сч[её]т *(на оплату|№|.*?\\bот *[0-9]).*", text, drp | re.MULTILINE)
@@ -336,7 +335,7 @@ def processText(text, pr):
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
     if u"ИНН" not in pr and u"КПП" not in pr:
-        results = re.findall(ur"([0-9О]{10}) *[\\\[\]\|/ ] *([0-9О]{9})\b", text, drp)
+        results = re.findall(ur"[^0-9О]([0-9О]{10}) *[\\\[\]\|/ ] *([0-9О]{9})\b", text, drp)
         results = [[v.replace(u"О", "0") for v in r] for r in results]
         for inn, kpp in results:
             if inn[0:4] == kpp[0:4]:
@@ -357,7 +356,7 @@ def processText(text, pr):
     # Если предыдущие шаги не дали никаких результатов, вставляем как ИНН, КПП и БИК
     # все подходящие цифры
     if u"ИНН" not in pr:
-        for rm in re.finditer(nap + u"\\b([0-9О]{10}|[0-9О]{12})\\b" + bndry, text, drp):
+        for rm in re.finditer(u"\\b([0-9О]{10}|[0-9О]{12})\\b" + bndry, text, drp):
             fillField(pr, u"ИНН", rm.group(1).replace(u"О", "0"))
 
     if u"БИК" not in pr:
@@ -372,11 +371,11 @@ def processText(text, pr):
             fillField(pr, u"КПП", val)
 
     # Ищем итоги, ставки и суммы НДС
-    for r in re.finditer(ur"Итого( [а-яА-Я ]*)?:?\n? *([0-9\., ]*)", text, drp):
+    for r in re.finditer(ur"Итого( [а-яА-ЯёЁ ]*)?:?\n? *([0-9\., ]*)", text, drp):
         if r.group(1) == None or (re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
             fillTotal(pr, parse(r.group(2).strip(".,")))
     for r in re.finditer(ur"(?:Всего |Итого |Сумма |в т\.ч\.|в том числе |включая ) *" +
-            ur"НДС *(\([0-9%]*)?(?: [а-яА-Я \)]*)?\.?:?\n? *([0-9\., ]*)", text, drp):
+            ur"НДС *(\([0-9%]*)?(?: [а-яА-ЯёЁ \)]*)?\.?:?\n? *([0-9\., ]*)", text, drp):
         if r.group(1) != None: fillVatType(pr, r.group(1))
         fillField(pr, u"СуммаНДС", parse(r.group(2).strip(".,")))
     if re.search(ur"Без *(налога)? *\(?НДС", text, drp):
@@ -441,6 +440,13 @@ def processExcel(filename, pr):
         for row in range(sht.nrows):
             for col in range(sht.ncols):
                 processXlsCell(sht, row, col, pr)
+    if u"р/с" not in pr or u"ИНН" not in pr or u"КПП" not in pr or u"БИК" not in pr or u"Счет" not in pr:
+        text = ""
+        for sht in wbk.sheets():
+            for row in range(sht.nrows):
+                for col in range(sht.ncols):
+                    text += unicode(sht.cell_value(row, col)) + "\n"
+        processText(text, pr)
 
 def processMsWord(filename, pr):
     debug = False
@@ -547,7 +553,7 @@ def printInvoiceData(pr, fout):
         item = item.replace(u"{%s}" % fld, unicode(pr.get(fld, u"")))
     item = item.replace(u"ИтогоСНДС", unicode(pr.get(u"Итого", u"")))
     try:
-        paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-Яa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"]).group(1)
+        paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"], drp).group(1)
         vatRate = pr.get(u"СтавкаНДС")
         vat = pr.get(u"СуммаНДС")
         if vatRate == u"БезНДС" or vat == 0:
