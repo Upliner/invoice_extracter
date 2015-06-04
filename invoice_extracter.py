@@ -16,6 +16,8 @@ from mylingv import searchSums
 if len(sys.argv) <= 1:
    print("Usage: python test.py file1 [file2...]\n");
 
+verbose = True
+
 # Реквизиты нашей организации, при встрече в документах игнорируем их, ищем только данные контрагентов
 
 our = {
@@ -35,22 +37,6 @@ drp = re.UNICODE | re.IGNORECASE # default regexp parameters
 # Первое десятизначное число интерпретируем как ИНН, первое девятизначное с первыми четырьмя 
 # цифрами, совпадающими с ИНН - как КПП, первое девятизначное, начинающиеся с 04 -- как БИК
 #
-
-class InvParseException(Exception):
-    def __init__(self, message):
-        super(InvParseException, self).__init__(message)
-
-# Заполняет поле с именем fld и проверяет, чтобы в нём уже не присутствовало другое значение
-def fillField(pr, fld, value):
-    if value == None: return
-    ourVal = our.get(fld)
-    if fld == u"ИНН" and value == ourVal: return
-    oldVal = pr.get(fld)
-    if value == ourVal and oldVal != ourVal: return
-    if oldVal != None and oldVal != value and value != ourVal and oldVal != ourVal:
-       if fld == u"Счет": return
-       raise InvParseException(u"Найдено несколько различных %s: %s и %s" % (fld, oldVal, value))
-    pr[fld] = value
 
 def epsilonEquals(a,b):
     if a == None or b == None: return False
@@ -80,16 +66,70 @@ def fillVatType(pr, content):
         fillField(pr, u"СтавкаНДС", u"0%") 
         fillField(pr, u"СуммаНДС", 0)
 
+innChk = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
+
 # Проверка полей
 def checkInn(val):
-    if len(val) != 10 and len(val) != 12:
-        raise InvParseException(u"Найден некорректный ИНН: %r" % val)
+    if (len(val) != 10 and len(val) != 12) or not re.match("[0-9]+$", val): return False
+    # Проверка контрольных цифр
+    def innControlDigit(idx):
+        if int(val[idx]) != sum([int(i)*c for i,c in zip(val[:idx],innChk[-idx:])])%11%10:
+            if verbose: sys.stderr.write(u"Неверная контрольная цифра %i в ИНН: %r\n" % (idx+1, val))
+            return False
+        return True
+    if len(val) == 10:
+        return innControlDigit(9)
+    return innControlDigit(10) and innControlDigit(11)
+   
 def checkKpp(val):
-    if len(val) != 9:
-        raise InvParseException(u"Найден некорректный КПП: %s" % val)
-def checkBic(val):
-    if len(val) != 9 or not val.startswith("04"):
-        raise InvParseException(u"Найден некорректный БИК: %s" % val)
+    if len(val) != 9 or not re.match("[0-9]+$", val): return False
+    return True
+def checkBic( val):
+    if len(val) != 9 or not val.startswith("04") or not re.match("[0-9]+$", val): return False
+    return True
+
+checkDict = { u"ИНН": checkInn, u"КПП": checkKpp, u"БИК": checkBic }
+
+class Err: pass
+
+# Заполняет поле с именем fld, проверяет его, и проверяет, чтобы в поле уже не присутствовало другое значение
+def fillField(pr, fld, value):
+    if value == None: return
+    ourVal = our.get(fld)
+    if fld == u"ИНН" and value == ourVal: return
+    oldVal = pr.get(fld)
+    if isinstance(oldVal, Err): return
+    if value == ourVal and oldVal != ourVal: return
+    if value == oldVal: return
+    check = checkDict.get(fld)
+    if check != None and not check(value):
+        if verbose: sys.stderr.write(u"%s: Найден некорректный %s: %s\n" % (pr["filename"], fld, value))
+        return
+    if oldVal != None and value != ourVal and oldVal != ourVal:
+       if fld == u"Счет": return
+       sys.stderr.write(u"%s: Найдено несколько различных %s: %s и %s\n" % (pr["filename"], fld, oldVal, value))
+       pr[fld]=Err()
+    pr[fld] = value
+
+
+accChk = [7,1,3]*7+[7,1]
+# Проверка ключа банковского счёта по БИКу и номеру счёта
+def checkBicAcc(pr):
+    if u"Корсчет" in pr:
+       prefix = pr[u"БИК"][6:10]
+    else:
+       prefix = "0" + pr[u"БИК"][4:6]
+    fullAcc = prefix + pr[u"р/с"]
+    err = u"%s: Некорректный ключ номера счёта: %s\n" % (pr["filename"], fullAcc)
+    if sum([int(i)*c for i,c in zip(fullAcc, accChk)]) % 10 != 0:
+        sys.stderr.write(err)
+        return False
+    key = int(fullAcc[11])
+    fullAcc = fullAcc[:11] + u"0" + fullAcc[12:]
+    if sum([int(i)*c for i,c in zip(fullAcc, accChk)]) * 3 % 10 != key:
+        sys.stderr.write(err)
+        return False
+    return True
 
 # Убрать лишние данные из номера счёта
 def stripInvoiceNumber(num):
@@ -157,7 +197,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         # В данной ячейке данных не найдено, проверяем ячейки/текстбоксы справа
         return getValueToTheRight(firstCell)[0]
 
-    for fld, check in [[u"ИНН", checkInn], [u"КПП", checkKpp], [u"БИК", checkBic]]:
+    for fld in [u"ИНН", u"КПП", u"БИК"]:
         if re.match(u"[^a-zA-Zа-яА-Я]?"  + fld + u"\\b", content, drp):
             val = getSecondValue()
             if val == None: return
@@ -165,7 +205,6 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             if not rm: return
             val = rm.group(0)
             if val == our.get(fld): return
-            check(val)
             fillField(pr, fld, val)
             return
     if re.match(u"Сч[её]т *(на оплату|№|.*? от [0-9][0-9]?[\\. ])", content, drp):
@@ -372,7 +411,7 @@ def processMsWord(filename, pr):
     sp = subprocess.Popen(["antiword", "-x", "db", filename], stdout=subprocess.PIPE, stderr=sys.stderr)
     stdoutdata, stderrdata = sp.communicate()
     if sp.poll() != 0:
-        print("Call to antiword failed, errcode is %i" % sp.poll())
+        sys.stderr.write("%s: Call to antiword failed, errcode is %i\n" % (filename, sp.poll()))
         return
     if debug:
         with open("invext-debug.xml","w") as f:
@@ -392,46 +431,55 @@ def getBicData(bic):
         u"Наименование": re.search(u"Наименование банка: <b>(.*?)</b>", page).group(1),
     }
 
-def printInvoiceData(pr):
-    if u"Счет" in pr:
-        print(pr[u"Счет"])
-    for fld in [u"ИНН", u"КПП", u"р/с", u"БИК", u"Корсчет",
-            u"ИтогоБезНДС", u"СтавкаНДС", u"СуммаНДС", u"Итого", u"ИтогоСНДС"]:
-        val = pr.get(fld)
-        if (val != None):
-            print("%s: %s" % (fld, val))
-    if not pr.get("СуммаПрописью"):
-        print("Предупреждение: сумма прописью не найдена")
-
+def finalizeAndCheck(pr):
+    def deleteBank():
+        for fld in [u"БИК", u"Корсчет", u"р/c"]:
+            if fld in pr: del pr[fld]
     if u"БИК" in pr:
         bicData = getBicData(pr[u"БИК"])
         if bicData != None:
             if bicData[u"Корсчет"] != bicData.get(u"Корсчет", u""):
-                print(u"Ошибка: не совпадает корсчёт")
-            print(u"Банк: " + bicData[u"Наименование"])
+                sys.stderr.write(u"%s: Ошибка: не совпадает корсчёт\n" % pr["filename"])
+                deleteBank()
+            else:
+                pr[u"Банк"] = bicData[u"Наименование"]
         else:
-            print(u"Ошибка: не удалось получить данные по БИК")
+            sys.stderr.write(u"%s: Ошибка: не удалось получить данные по БИК\n" % pr["filename"])
+            deleteBank()
+        if u"р/с" in pr:
+            if not checkBicAcc(pr):
+                deleteBank()
+
+def printInvoiceData(pr):
+    if u"Счет" in pr:
+        print(pr[u"Счет"])
+    for fld in [u"ИНН", u"КПП", u"р/с", u"Банк", u"БИК", u"Корсчет",
+            u"ИтогоБезНДС", u"СтавкаНДС", u"СуммаНДС", u"Итого", u"ИтогоСНДС"]:
+        val = pr.get(fld)
+        if val != None and not isinstance(val, Err):
+            print("%s: %s" % (fld, val))
+    if not pr.get("СуммаПрописью"):
+        sys.stderr.write(u"%s: Предупреждение: сумма прописью не найдена\n" % pr["filename"])
+
 
 for i in range(1,len(sys.argv)):
     f, ext = os.path.splitext(sys.argv[i])
     f = sys.argv[i]
     print(f)
     ext = ext.lower()
-    pr = {} # Parse result
-    try:
-        if (ext in ['.png','.bmp','.jpg','.gif']):
-            processImage(Image.open(f), pr)
-        elif (ext == '.pdf'):
-            with open(f, "rb") as f: processPDF(f, pr)
-        elif (ext in ['.xls', '.xlsx']):
-            processExcel(f, pr)
-        elif (ext in ['.doc']):
-            processMsWord(f, pr)
-        elif (ext in ['.txt', '.xml']):
-            with open(f, "rb") as f: processText(f.read().decode("utf-8"), pr)
-        else:
-            sys.stderr.write("%s: unknown extension\n" % f)
-    except InvParseException as e:
-        print(unicode(e))
+    pr = { "filename": f} # Parse result
+    if (ext in ['.png','.bmp','.jpg','.gif']):
+        processImage(Image.open(f), pr)
+    elif (ext == '.pdf'):
+        with open(f, "rb") as f: processPDF(f, pr)
+    elif (ext in ['.xls', '.xlsx']):
+        processExcel(f, pr)
+    elif (ext in ['.doc']):
+        processMsWord(f, pr)
+    elif (ext in ['.txt', '.xml']):
+        with open(f, "rb") as f: processText(f.read().decode("utf-8"), pr)
+    else:
+        sys.stderr.write("%s: unknown extension\n" % f)
+    finalizeAndCheck(pr)
     printInvoiceData(pr)
     sys.stdout.flush()
