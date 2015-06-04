@@ -1,7 +1,7 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
 
-import os, sys, xlrd, re, io, subprocess, urllib2, argparse
+import os, sys, xlrd, re, io, subprocess, urllib2, argparse, datetime
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfparser import PDFParser
@@ -28,9 +28,11 @@ args = parser.parse_args()
 
 if args.credfile == None:
     our = {
+        u"Наименование": u"ООО \"Бесконтактные устройства\"",
         u"ИНН": "7702818199",
         u"КПП": "770201001",
         u"р/с": "40702810700120030086",
+        u"Банк": u"ОАО АКБ \"АВАНГАРД\"",
         u"БИК": "044525201",
         u"Корсчет": "30101810000000000201",
     }
@@ -106,7 +108,9 @@ def checkBic( val):
 
 checkDict = { u"ИНН": checkInn, u"КПП": checkKpp, u"БИК": checkBic }
 
-class Err: pass
+class Err:
+    def __repr__():
+        return ""
 
 # Заполняет поле с именем fld, проверяет его, и проверяет, чтобы в поле уже не присутствовало другое значение
 def fillField(pr, fld, value):
@@ -213,25 +217,6 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         # В данной ячейке данных не найдено, проверяем ячейки/текстбоксы справа
         return getValueToTheRight(firstCell)[0]
 
-    for fld in [u"ИНН", u"КПП", u"БИК"]:
-        if re.match(u"[^a-zA-Zа-яА-Я]?"  + fld + u"\\b", content, drp):
-            val = getSecondValue()
-            if val == None: return
-            rm = re.match("[0-9]+", val)
-            if not rm: return
-            val = rm.group(0)
-            if val == our.get(fld): return
-            fillField(pr, fld, val)
-            return
-    if re.match(u"Сч[её]т *(на оплату|№|.*? от [0-9][0-9]?[\\. ])", content, drp):
-        text = content
-        val, cell = getValueToTheRight(firstCell)
-        while val != None:
-            text += " "
-            text += val
-            val, cell = getValueToTheRight(cell)
-        fillField(pr, u"Счет", stripInvoiceNumber(text.strip().replace("\n"," ").replace("  "," ")))
-        return
     if re.match(u"ИНН */ *КПП\\b", content, drp):
         val = getSecondValue()
         if val == None: return
@@ -246,6 +231,28 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         checkKpp(rm.group(2))
         fillField(pr, u"КПП", rm.group(2))
         return
+
+    for fld in [u"ИНН", u"КПП", u"БИК"]:
+        if re.match(u"[^a-zA-Zа-яА-Я]?"  + fld + u"\\b", content, drp):
+            val = getSecondValue()
+            if val == None: return
+            rm = re.match("[0-9]+", val)
+            if not rm: return
+            val = rm.group(0)
+            if val == our.get(fld): return
+            fillField(pr, fld, val)
+            return
+
+    if re.match(u"Сч[её]т *(на оплату|№|.*? от [0-9][0-9]?[\\. ])", content, drp):
+        text = content
+        val, cell = getValueToTheRight(firstCell)
+        while val != None:
+            text += " "
+            text += val
+            val, cell = getValueToTheRight(cell)
+        fillField(pr, u"Счет", stripInvoiceNumber(text.strip().replace("\n"," ").replace("  "," ")))
+        return
+
     if u" рубл" in content: findSumsInWords(content, pr)
     if (re.match(u"Итого|Всего", content, drp) and
             (re.search(u"(с|без) *НДС", content, drp) or not u"НДС" in content)):
@@ -254,6 +261,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         if val == None: return
         fillTotal(pr, parse(val))
         return
+
     if u"НДС" in content:
         fillVatType(pr, content)
         if re.search(ur"(Всего|Итого|Сумма|Включая|в т\.ч\.|в том числе|НДС *\(?[0-9]*%\)? *:?).*?", content, drp):
@@ -276,7 +284,7 @@ def findSumsInWords(text, pr):
         elif epsilonEquals(psum, pr.get(u"СуммаНДС")):
             return
         fillField(pr, u"ИтогоСНДС", psum)
-        pr["СуммаПрописью"] = True
+        pr[u"СуммаПрописью"] = True
 
 def findBankAccounts(text, pr):
     for w in re.finditer(u"[0-9О]{4} *[0-9О]81[0О] *[0-9О]{4} *[0-9О]{4} *[0-9О]{4}\\b", text, drp):
@@ -431,10 +439,13 @@ def getBicData(bic):
         return None
     finally:
         f.close()
-    return {
-        u"Корсчет": re.search(u"Корреспондентский счет: <b>(.*?)</b>", page).group(1),
-        u"Наименование": re.search(u"Наименование банка: <b>(.*?)</b>", page).group(1),
-    }
+    try:
+        return {
+            u"Корсчет": re.search(u"Корреспондентский счет: <b>(.*?)</b>", page).group(1),
+            u"Наименование": re.search(u"Наименование банка: <b>(.*?)</b>", page).group(1),
+        }
+    except AttributeError:
+        return None
 
 def finalizeAndCheck(pr):
     def deleteBank():
@@ -454,37 +465,101 @@ def finalizeAndCheck(pr):
         if u"р/с" in pr:
             if not checkBicAcc(pr):
                 deleteBank()
-
-def printInvoiceData(pr):
-    if u"Счет" in pr:
-        print(pr[u"Счет"])
-    for fld in [u"ИНН", u"КПП", u"р/с", u"Банк", u"БИК", u"Корсчет",
-            u"ИтогоБезНДС", u"СтавкаНДС", u"СуммаНДС", u"Итого", u"ИтогоСНДС"]:
-        val = pr.get(fld)
-        if val != None and not isinstance(val, Err):
-            print("%s: %s" % (fld, val))
-    if not pr.get("СуммаПрописью"):
+    if not pr.get(u"СуммаПрописью"):
         sys.stderr.write(u"%s: Предупреждение: сумма прописью не найдена\n" % pr["filename"])
+    vat = pr.get(u"СуммаНДС")
+    amt = pr.get(u"ИтогоСНДС", pr.get("Итого"))
+    if vat != None and amt != None:
+        if vat>(amt*0.18+0.1):
+            sys.stderr.write(u"%s: Ошибка: некорректная сумма НДС: %r\n" % (pr["filename"], vat))
+            del pr[u"СуммаНДС"]
+        
+def printInvoiceData(pr):
+    item = itemTemplate
+    for fld in [u"ИНН", u"КПП", u"р/с", u"Банк", u"БИК", u"Корсчет", u"ИтогоСНДС"]:
+        item = item.replace(u"{%s}" % fld, unicode(pr.get(fld, u"")))
+    item = item.replace(u"ИтогоСНДС", unicode(pr.get(u"Итого", u"")))
+    
+    try:
+        paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-Яa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"]).group(1)
+        vatRate = pr.get(u"СтавкаНДС")
+        vat = pr.get(u"СуммаНДС")
+        if vatRate == u"БезНДС" or vat == 0:
+            paydetails += u", НДС не облагается"
+        elif vat != None:
+            paydetails += u", в т.ч. НДС"
+            if vatRate != None: paydetails += u"(%s)" % vatRate
+            paydetails += u" " + unicode(pr.get(u"СуммаНДС"))
+        item = item.replace(u"{НазначениеПлатежа}", paydetails)
+    except AttributeError: pass
+    except KeyError: pass
+    item = re.sub(r"\{.*?\}","", item)
+    print(item.encode("cp1251"))
 
+dateStr = datetime.date.today().strftime("%d.%m.%y")
 
-for f in args.files:
-    f = f.decode("utf-8")
-    f_, ext = os.path.splitext(f)
-    print(f)
-    ext = ext.lower()
-    pr = { "filename": f} # Parse result
-    if (ext in ['.png','.bmp','.jpg','.gif']):
-        processImage(Image.open(f), pr)
-    elif (ext == '.pdf'):
-        with open(f, "rb") as f: processPDF(f, pr)
-    elif (ext in ['.xls', '.xlsx']):
-        processExcel(f, pr)
-    elif (ext in ['.doc']):
-        processMsWord(f, pr)
-    elif (ext in ['.txt', '.xml']):
-        with open(f, "rb") as f: processText(f.read().decode("utf-8"), pr)
-    else:
-        sys.stderr.write("%s: unknown extension\n" % f)
-    finalizeAndCheck(pr)
-    printInvoiceData(pr)
-    sys.stdout.flush()
+fileHeader = (
+u"""1CClientBankExchange
+ВерсияФормата=1.01
+Кодировка=Windows
+ДатаСоздания={0}
+ВремяСоздания={1}
+ДатаНачала={0}
+ДатаКонца={0}
+РасчСчет={2}""")
+
+itemTemplate = (
+u"""СекцияДокумент=Платежное поручение
+Дата={Дата}
+Сумма={ИтогоСНДС}
+ПлательщикСчет={our:р/с}
+Плательщик={our:Наименование}
+ПлательщикИНН={our:ИНН}
+ПлательщикКПП={our:КПП}
+ПлательщикБанк1={our:Банк}
+ПлательщикБИК={our:БИК}
+ПлательщикКорсчет={our:Корсчет}
+ПолучательСчет={р/с}
+Получатель={Наименование}
+ПолучательИНН={ИНН}
+ПолучательКПП={КПП}
+ПолучательБанк1={Банк}
+ПолучательБИК={БИК}
+ПолучательКорсчет={Корсчет}
+ВидОплаты=01
+НазначениеПлатежа={НазначениеПлатежа}
+КонецДокумента""").replace(u"{Дата}", dateStr)
+
+for fld, val in our.iteritems():
+    itemTemplate = itemTemplate.replace(u"{our:%s}" % fld, val)
+itemTemplate = re.sub(r"\{our:.*?\}","", itemTemplate)
+
+fileFooter = u"КонецФайла"
+
+print(fileHeader.format(dateStr,
+    datetime.datetime.now().strftime("%H:%M:%S"),
+    our.get("р/с", "")).encode("cp1251"))
+
+try:
+    for f in args.files:
+        f = f.decode("utf-8")
+        f_, ext = os.path.splitext(f)
+        ext = ext.lower()
+        pr = { "filename": f} # Parse result
+        if (ext in ['.png','.bmp','.jpg','.gif']):
+            processImage(Image.open(f), pr)
+        elif (ext == '.pdf'):
+            with open(f, "rb") as f: processPDF(f, pr)
+        elif (ext in ['.xls', '.xlsx']):
+            processExcel(f, pr)
+        elif (ext in ['.doc']):
+            processMsWord(f, pr)
+        elif (ext in ['.txt', '.xml']):
+            with open(f, "rb") as f: processText(f.read().decode("utf-8"), pr)
+        else:
+            sys.stderr.write("%s: unknown extension\n" % f)
+        finalizeAndCheck(pr)
+        printInvoiceData(pr)
+        sys.stdout.flush()
+finally:
+    print(fileFooter.encode("cp1251"))
