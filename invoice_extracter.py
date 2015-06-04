@@ -15,18 +15,32 @@ from mylingv import searchSums
 
 parser = argparse.ArgumentParser(description='Extract data from invoices.')
 
-parser.add_argument("files", metavar="file", type=str, nargs="+",
-                   help="file to process")
+parser.add_argument("files", metavar="file", type=str, nargs="+", help="file to process")
 parser.add_argument("-v", "--verbose", dest="verbose", action='store_true',
                    help='print every mismatched INN')
-parser.add_argument("-c", "--credentails", type=unicode, default = None, dest="credfile",
-                   help="specify credentails file")
+parser.add_argument("-q", "--requisites", type=str, default = None, dest="reqfile",
+                   help="specify requisites file")
+parser.add_argument("--no-strict", action='store_true', dest="nostrict",
+                   help="don't remove INN/KPP from output when mismatches with database")
+parser.add_argument("--inn", type=str, default = None, help="specify INN code")
+parser.add_argument("--kpp", type=str, default = None, help="specify KPP code")
+parser.add_argument("--acc", type=str, default = None, help="specify bank account")
+parser.add_argument("--bic", type=str, default = None, help="specify bank identification code")
+parser.add_argument("--coracc", type=str, default = None, help="specify bank transit account")
 
 args = parser.parse_args()
 
-# Реквизиты нашей организации, при встрече в документах игнорируем их, ищем только данные контрагентов
+# Принимаем реквизиты из файла, коммандной строки или берём по умолчанию
 
-if args.credfile == None:
+if args.inn or args.kpp or args.acc or args.bic or args.coracc:
+    if args.reqfile != None:
+        sys.stderr.write("Ошибка: одновременно заданы реквизиты в файле и в коммандной строке\n")
+        sys.exit(1)
+    our = {}
+    for a, o in [("inn", u"ИНН"), ("kpp", u"КПП"), ("acc", u"р/с"), ("bic", u"БИК"), ("coracc", u"Корсчет")]:
+        val = vars(args)[a]
+        if val != None: our[o] = val
+elif args.reqfile == None:
     our = {
         u"Наименование": u"ООО \"Бесконтактные устройства\"",
         u"ИНН": "7702818199",
@@ -38,7 +52,7 @@ if args.credfile == None:
     }
 else:
     our = {}
-    with open(args.credfile,"r") as cf: data = cf.read()
+    with open(args.credfile.decode("utf-8"),"r") as cf: data = cf.read()
     data = data.decode("utf-8")
     for line in data.split("\n"):
         line = line.strip()
@@ -98,7 +112,7 @@ def checkInn(val):
     if len(val) == 10:
         return innControlDigit(9)
     return innControlDigit(10) and innControlDigit(11)
-   
+
 def checkKpp(val):
     if len(val) != 9 or not re.match("[0-9]+$", val): return False
     return True
@@ -107,6 +121,11 @@ def checkBic( val):
     return True
 
 checkDict = { u"ИНН": checkInn, u"КПП": checkKpp, u"БИК": checkBic }
+
+for fld, check in checkDict.iteritems():
+    if fld in our and not check(our[fld]):
+        sys.stderr.write(u"Ошибка: задан некорректный %s нашей организации: %s\n" % (fld, our[fld]))
+        exit(1)
 
 class Err:
     def __repr__():
@@ -140,7 +159,7 @@ def checkBicAcc(pr):
     else:
        prefix = "0" + pr[u"БИК"][4:6]
     fullAcc = prefix + pr[u"р/с"]
-    err = u"%s: Некорректный ключ номера счёта: %s\n" % (pr["filename"], fullAcc)
+    err = u"%s: Некорректный ключ номера счёта: %s\n" % (pr.get("filename"), pr[u"р/с"])
     if sum([int(i)*c for i,c in zip(fullAcc, accChk)]) % 10 != 0:
         sys.stderr.write(err)
         return False
@@ -150,6 +169,10 @@ def checkBicAcc(pr):
         sys.stderr.write(err)
         return False
     return True
+
+if u"БИК" in our and u"р/с" in our and u"Корсчет" in our:
+    if not checkBicAcc(our):
+        exit(1)
 
 # Убрать лишние данные из номера счёта
 def stripInvoiceNumber(num):
@@ -432,11 +455,13 @@ def processMsWord(filename, pr):
     processText(stdoutdata.decode("utf-8"), pr)
 
 def getBicData(bic):
+    f = None
     try:
         f = urllib2.urlopen("http://www.bik-info.ru/bik_%s.html" % bic)
         page = f.read().decode("cp1251")
     except URLError: return None
-    finally: f.close()
+    finally:
+        if f != None: f.close()
     try:
         return {
             u"Корсчет": re.search(u"Корреспондентский счет: <b>(.*?)</b>", page).group(1),
@@ -452,6 +477,7 @@ def requestCompanyInfo(inn):
     "__EVENTVALIDATION":"/wEdAAgIIDiAdZkwuCBwGFg+Yb3wQAkPfS3ALM1l8HYCRLcTjKUF4enLXO3emfMk8iBi1qvRvDs5OXQ11rod7fgapnnyQ2pdoSqiOAqq4PCYWcCsWwd4wD37xIK/Lo7dzZyKenvHGmy602W3dHJKoVjq4UNjn4j8c9nzo0RlxtfBH2PEDg=="
     })
     req = urllib2.Request("http://www.fedresurs.ru/companies/IsSearching", data)
+    fp = None
     try:
         fp = urllib2.urlopen(req)
         orgId = re.search(r"window.location.assign\('/companies/([0-9]+)'\)", fp.read().decode("utf-8")).group(1)
@@ -460,7 +486,8 @@ def requestCompanyInfo(inn):
         page = fp.read().decode("utf-8")
     except AttributeError: return None
     except URLError: return None
-    finally: fp.close()
+    finally:
+        if fp != None: fp.close()
     inn2 = re.search(ur"ИНН:</td>\s*<td>([0-9]{10})</td>", page, re.UNICODE).group(1)
     if inn2 != inn:
         sys.stderr.write("Ошибка обращения к сайту fedresurs.ru: ИНН не соответствует запрошенному\n")
@@ -480,6 +507,10 @@ def finalizeAndCheck(pr):
     def deleteCompany():
         for fld in [u"ИНН", u"КПП"]:
             if fld in pr: del pr[fld]
+    for fld in pr:
+        if isinstance(pr[fld], Err): del pr[fld]
+    if u"р/с" in pr and "БИК" in pr and not checkBicAcc(pr):
+        deleteBank()
     if u"БИК" in pr:
         bicData = getBicData(pr[u"БИК"])
         if bicData:
@@ -491,20 +522,16 @@ def finalizeAndCheck(pr):
         else:
             sys.stderr.write(u"%s: Ошибка: не удалось получить данные по БИК\n" % pr["filename"])
             deleteBank()
-        if u"р/с" in pr:
-            if not checkBicAcc(pr):
-                deleteBank()
     if u"ИНН" in pr and len(pr[u"ИНН"]) == 10:
         ci = requestCompanyInfo(pr[u"ИНН"])
         if ci:
             if ci[u"КПП"] != pr.get(u"КПП", u""):
                 sys.stderr.write(u"%s: Ошибка: не совпадает КПП\n" % pr["filename"])
-                deleteCompany()
+                if not args.nostrict: deleteCompany()
             else:
                 pr[u"Наименование"] = ci[u"Наименование"]
         else:
             sys.stderr.write(u"%s: Ошибка: не удалось получить данные по ИНН\n" % pr["filename"])
-            deleteCompany()
     if not pr.get(u"СуммаПрописью"):
         sys.stderr.write(u"%s: Предупреждение: сумма прописью не найдена\n" % pr["filename"])
     vat = pr.get(u"СуммаНДС")
@@ -513,13 +540,12 @@ def finalizeAndCheck(pr):
         if vat>(amt*0.18+0.1):
             sys.stderr.write(u"%s: Ошибка: некорректная сумма НДС: %r\n" % (pr["filename"], vat))
             del pr[u"СуммаНДС"]
-        
-def printInvoiceData(pr):
+
+def printInvoiceData(pr, fout):
     item = itemTemplate
     for fld in [u"ИНН", u"КПП", u"Наименование", u"р/с", u"Банк", u"БИК", u"Корсчет", u"ИтогоСНДС"]:
         item = item.replace(u"{%s}" % fld, unicode(pr.get(fld, u"")))
     item = item.replace(u"ИтогоСНДС", unicode(pr.get(u"Итого", u"")))
-    
     try:
         paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-Яa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"]).group(1)
         vatRate = pr.get(u"СтавкаНДС")
@@ -534,9 +560,9 @@ def printInvoiceData(pr):
     except AttributeError: pass
     except KeyError: pass
     item = re.sub(r"\{.*?\}","", item)
-    print(item.encode("cp1251"))
+    fout.write(item.encode("cp1251"))
 
-dateStr = datetime.date.today().strftime("%d.%m.%y")
+dateStr = datetime.date.today().strftime("%d.%m.%Y")
 
 fileHeader = (
 u"""1CClientBankExchange
@@ -546,7 +572,8 @@ u"""1CClientBankExchange
 ВремяСоздания={1}
 ДатаНачала={0}
 ДатаКонца={0}
-РасчСчет={2}""")
+РасчСчет={2}
+""")
 
 itemTemplate = (
 u"""СекцияДокумент=Платежное поручение
@@ -568,19 +595,21 @@ u"""СекцияДокумент=Платежное поручение
 ПолучательКорсчет={Корсчет}
 ВидОплаты=01
 НазначениеПлатежа={НазначениеПлатежа}
-КонецДокумента""").replace(u"{Дата}", dateStr)
+КонецДокумента
+""").replace(u"{Дата}", dateStr)
 
 for fld, val in our.iteritems():
     itemTemplate = itemTemplate.replace(u"{our:%s}" % fld, val)
 itemTemplate = re.sub(r"\{our:.*?\}","", itemTemplate)
 
-fileFooter = u"КонецФайла"
+fileFooter = u"КонецФайла\n"
 
-print(fileHeader.format(dateStr,
-    datetime.datetime.now().strftime("%H:%M:%S"),
-    our.get("р/с", "")).encode("cp1251"))
-
+fout = open("1c_to_kl.txt", "w")
 try:
+    fout.write(fileHeader.format(dateStr,
+        datetime.datetime.now().strftime("%H:%M:%S"),
+        our.get("р/с", "")).encode("cp1251"))
+
     for f in args.files:
         f = f.decode("utf-8")
         f_, ext = os.path.splitext(f)
@@ -599,7 +628,7 @@ try:
         else:
             sys.stderr.write("%s: unknown extension\n" % f)
         finalizeAndCheck(pr)
-        printInvoiceData(pr)
-        sys.stdout.flush()
+        printInvoiceData(pr, fout)
 finally:
-    print(fileFooter.encode("cp1251"))
+    fout.write(fileFooter.encode("cp1251"))
+    fout.close()
