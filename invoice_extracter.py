@@ -486,6 +486,7 @@ def getBicData(bic):
         return {
             u"Корсчет": re.search(u"Корреспондентский счет: <b>(.*?)</b>", page).group(1),
             u"Наименование": re.search(u"Наименование банка: <b>(.*?)</b>", page).group(1),
+            u"Город": re.search(u"Расположение банка: <b>(.*?)</b>", page).group(1),
         }
     except AttributeError:
         sys.stderr.write(u"Ошибка: не удалось распознать страницу %s\n" % url)
@@ -571,7 +572,9 @@ def finalizeAndCheck(pr):
                         pr[u"Корсчет"] = bicData[u"Корсчет"]
                     else:
                         deleteBank()
-            if u"БИК" in pr: pr[u"Банк"] = bicData[u"Наименование"]
+            if u"БИК" in pr:
+                pr[u"Банк"] = bicData[u"Наименование"]
+                pr[u"Банк2"] = u"г. " + bicData[u"Город"]
         else:
             sys.stderr.write(u"%s: Ошибка: не удалось получить данные по БИК %s\n" % (pr["filename"], u"БИК"))
             if args.strict: deleteBank()
@@ -607,7 +610,7 @@ def finalizeAndCheck(pr):
 
 def printInvoiceData(pr, fout):
     item = itemTemplate
-    for fld in [u"ИНН", u"КПП", u"Наименование", u"р/с", u"Банк", u"БИК", u"Корсчет", u"ИтогоСНДС"]:
+    for fld in [u"ИНН", u"КПП", u"Наименование", u"р/с", u"Банк", u"Банк2", u"БИК", u"Корсчет", u"ИтогоСНДС"]:
         item = item.replace(u"{%s}" % fld, unicode(pr.get(fld, u"")))
     try:
         paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"], drp).group(1)
@@ -643,20 +646,26 @@ u"""СекцияДокумент=Платежное поручение
 Дата={Дата}
 Сумма={ИтогоСНДС}
 ПлательщикСчет={our:р/с}
+ПлательщикРасчСчет={our:р/с}
 Плательщик={our:Наименование}
+Плательщик1={our:Наименование}
 ПлательщикИНН={our:ИНН}
 ПлательщикКПП={our:КПП}
 ПлательщикБанк1={our:Банк}
 ПлательщикБИК={our:БИК}
 ПлательщикКорсчет={our:Корсчет}
 ПолучательСчет={р/с}
+ПолучательРасчСчет={р/с}
 Получатель={Наименование}
+Получатель1={Наименование}
 ПолучательИНН={ИНН}
 ПолучательКПП={КПП}
 ПолучательБанк1={Банк}
+ПолучательБанк2={Банк2}
 ПолучательБИК={БИК}
 ПолучательКорсчет={Корсчет}
 ВидОплаты=01
+Очередность=5
 НазначениеПлатежа={НазначениеПлатежа}
 КонецДокумента
 """).replace(u"{Дата}", dateStr)
@@ -671,7 +680,7 @@ fout = open("1c_to_kl.txt", "w")
 try:
     fout.write(fileHeader.format(dateStr,
         datetime.datetime.now().strftime("%H:%M:%S"),
-        our.get("р/с", "")).encode("cp1251"))
+        our.get(u"р/с", "")).encode("cp1251"))
 
     for f in args.files:
         f = f.decode("utf-8")
