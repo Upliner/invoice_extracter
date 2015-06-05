@@ -374,7 +374,7 @@ def processText(text, pr):
             fillTotal(pr, parse(r.group(2).strip(".,")))
 
     for r in re.finditer(ur"(?:Всего |Итого |Сумма |в т\.ч\.|в том числе |включая ) *" +
-            ur"НДС *(\([0-9%]*)?(?: [а-яА-ЯёЁ \)]*)?\.?:?\n? *([0-9\., ]*)", text, drp):
+            ur"НДС *(?:по ставке)? *\(?([0-9%]*)?(?: [а-яА-ЯёЁ \)]*)?\.?:?\n? *([0-9\., ]*)", text, drp):
         if r.group(1) != None: fillVatType(pr, r.group(1))
         fillField(pr, u"СуммаНДС", parse(r.group(2).strip(".,")))
 
