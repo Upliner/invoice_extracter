@@ -102,10 +102,10 @@ innChk = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
 
 # Проверка полей
 def checkInn(val):
-    if (len(val) != 10 and len(val) != 12) or not re.match("[0-9]+$", val): return False
+    if not re.match("[0-9]{10}(?:[0-9]{2})?$", val): return False
     # Проверка контрольных цифр
     def innControlDigit(idx):
-        if int(val[idx]) != sum([int(i)*c for i,c in zip(val[:idx],innChk[-idx:])])%11%10:
+        if int(val[idx]) != sum(int(i)*c for i,c in zip(val[:idx],innChk[-idx:]))%11%10:
             if args.verbose: sys.stderr.write(u"Неверная контрольная цифра %i в ИНН: %r\n" % (idx+1, val))
             return False
         return True
@@ -157,12 +157,12 @@ def checkBicAcc(pr):
        prefix = "0" + pr[u"БИК"][4:6]
     fullAcc = prefix + pr[u"р/с"]
     err = u"%s: Некорректный ключ номера счёта: %s\n" % (pr.get("filename", u"Ошибка"), pr[u"р/с"])
-    if sum([int(i)*c for i,c in zip(fullAcc, accChk)]) % 10 != 0:
+    if sum(int(i)*c for i,c in zip(fullAcc, accChk)) % 10 != 0:
         sys.stderr.write(err)
         return False
     key = int(fullAcc[11])
     fullAcc = fullAcc[:11] + u"0" + fullAcc[12:]
-    if sum([int(i)*c for i,c in zip(fullAcc, accChk)]) * 3 % 10 != key:
+    if sum(int(i)*c for i,c in zip(fullAcc, accChk)) * 3 % 10 != key:
         sys.stderr.write(err)
         return False
     return True
@@ -536,16 +536,15 @@ def requestCompanyNameIgk(inn):
     page = f.read().decode("utf-8")
     f.close()
     try:
-        inn2 = re.search(ur"ИНН:</td>\s*<td>([0-9]{10})</td>", page, re.UNICODE).group(1)
+        inn2 = re.search(ur"<th>ИНН</th>\s*<td>([0-9]{10}(?:[0-9]{2})?)</td>", page, re.UNICODE).group(1)
         if inn2 != inn:
             sys.stderr.write(u"Ошибка обращения к сайту igk-group.ru: ИНН не соответствует запрошенному\n")
             return None
         if len(inn) == 12:
-            return "ИП " + re.search(ur"<th>Руководство</th>\s*<td>\s*(.*?)\s*</td>", page, re.UNICODE).group(1)
+            return u"ИП " + re.search(ur"<th>Руководство</th>\s*<td>\s*(.*?)\s*</td>", page, re.UNICODE).group(1)
         elif len(inn) == 10:
             return re.search(ur"<th>Краткое название</th>\s*<td colspan=\"3\">\s*(.*?)\s*</td>", page, re.UNICODE).group(1)
         else: raise AssertionError("Unchecked INN passed")
-
     except AttributeError:
         sys.stderr.write(u"Ошибка: не удалось распознать страницу %s\n" % url)
         return None
@@ -692,8 +691,9 @@ try:
             with open(f, "rb") as f: processText(f.read().decode("utf-8"), pr)
         else:
             sys.stderr.write("%s: unknown extension\n" % f)
-        finalizeAndCheck(pr)
-        printInvoiceData(pr, fout)
+        if len(pr)>1:
+            finalizeAndCheck(pr)
+            printInvoiceData(pr, fout)
         fout.flush()
 finally:
     fout.write(fileFooter.encode("cp1251"))
