@@ -138,8 +138,8 @@ def fillField(pr, fld, value):
     if fld == u"ИНН" and value == ourVal: return
     oldVal = pr.get(fld)
     if isinstance(oldVal, Err): return
-    if value == ourVal and oldVal != ourVal: return
     if value == oldVal: return
+    if value == ourVal and oldVal != None: return
     check = checkDict.get(fld)
     if check != None and not check(value):
         if args.verbose: sys.stderr.write(u"%s: Найден некорректный %s: %s\n" % (pr["filename"], fld, value))
@@ -240,23 +240,24 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         # В данной ячейке данных не найдено, проверяем ячейки/текстбоксы справа
         return getValueToTheRight(firstCell)[0]
 
-    if re.match(u"ИНН */ *КПП\\b", content, drp):
-        val = getSecondValue()
+    rm = re.match(ur"ИНН */ *КПП\b[: ]*(.*)", content, drp)
+    if rm:
+        val = rm.group(1).strip()
+        if len(val) == 0: val = getValueToTheRight(firstCell)[0]
         if val == None: return
-        rm = re.match("([0-9]{10}) */? *([0-9]{9})\\b", val, drp)
-        if rm:
-            rm = re.match("([0-9]{12}) */?\\b", val, drp)
+        rm = re.match(r"([0-9]{10}) */? *([0-9]{9})\b", val, drp)
+        if rm == None:
+            rm = re.match(r"([0-9]{12})\b", val, drp)
             if rm == None: return
             checkInn(rm.group(1))
             fillField(pr, u"ИНН", rm.group(1))
-        checkInn(rm.group(1))
+            return
         fillField(pr, u"ИНН", rm.group(1))
-        checkKpp(rm.group(2))
         fillField(pr, u"КПП", rm.group(2))
         return
 
     for fld in [u"ИНН", u"КПП", u"БИК"]:
-        if re.match(u"[^a-zA-Zа-яА-ЯёЁ]?"  + fld + u"\\b", content, drp):
+        if re.match(u"[^a-zA-Zа-яА-ЯёЁ]?"  + fld + r"\b", content, drp):
             val = getSecondValue()
             if val == None: return
             rm = re.match("[0-9]+", val)
@@ -266,7 +267,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             fillField(pr, fld, val)
             return
 
-    if re.match(u"Сч[её]т *(на оплату|№|.*? от [0-9][0-9]?[\\. ])", content, drp):
+    if re.match(ur"Сч[её]т *(на оплату|№|.*? от [0-9][0-9]?[\. ])", content, drp):
         text = content
         val, cell = getValueToTheRight(firstCell)
         while val != None:
@@ -524,15 +525,18 @@ def finalizeAndCheck(pr):
     if u"БИК" in pr:
         bicData = getBicData(pr[u"БИК"])
         if bicData:
-            if bicData[u"Корсчет"] != pr.get(u"Корсчет", u""):
-                sys.stderr.write(u"%s: Ошибка: не совпадает корсчёт: в файле %s, в базе %s\n" % (
-                    pr["filename"], pr.get(u"Корсчет", u"пусто"), "пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
-                deleteBank()
-            else:
-                pr[u"Банк"] = bicData[u"Наименование"]
+            if bicData[u"Корсчет"] != pr.get(u"Корсчет", ""):
+                if bicData[u"Корсчет"] == "" and pr[u"Корсчет"] == our.get(u"Корсчет"):
+                    # Распознался наш корсчёт, на самом деле корсчёта быть не должно
+                    del pr[u"Корсчет"]
+                else:
+                    sys.stderr.write(u"%s: Ошибка: не совпадает корсчёт: в файле %s, в базе %s\n" % (
+                        pr["filename"], pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
+                    deleteBank()
+            if u"БИК" in pr: pr[u"Банк"] = bicData[u"Наименование"]
         else:
             sys.stderr.write(u"%s: Ошибка: не удалось получить данные по БИК\n" % pr["filename"])
-            deleteBank()
+            if not args.nostrict: deleteBank()
     if u"ИНН" in pr and len(pr[u"ИНН"]) == 10:
         ci = requestCompanyInfo(pr[u"ИНН"])
         if ci:
@@ -541,8 +545,7 @@ def finalizeAndCheck(pr):
                         pr["filename"], ci[u"Наименование"], pr.get(u"КПП", u"пусто"), ci[u"КПП"]))
                 if not args.nostrict: deleteCompany()
                 elif u"КПП" not in pr: pr[u"КПП"] = ci[u"КПП"]
-            else:
-                pr[u"Наименование"] = ci[u"Наименование"]
+            if u"ИНН" in pr: pr[u"Наименование"] = ci[u"Наименование"]
         else:
             sys.stderr.write(u"%s: Ошибка: не удалось получить данные по ИНН\n" % pr["filename"])
     if not pr.get(u"СуммаПрописью"):
