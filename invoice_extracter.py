@@ -52,7 +52,7 @@ elif args.reqfile == None:
     }
 else:
     our = {}
-    with open(args.credfile.decode("utf-8"),"r") as cf: data = cf.read()
+    with open(args.reqfile.decode("utf-8"),"r") as cf: data = cf.read()
     data = data.decode("utf-8")
     for line in data.split("\n"):
         line = line.strip()
