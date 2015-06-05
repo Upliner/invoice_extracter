@@ -1,7 +1,7 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
 
-import os, sys, xlrd, re, io, subprocess, urllib, urllib2, argparse, datetime
+import os, sys, xlrd, re, io, subprocess, urllib, urllib2, argparse, datetime, time
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfparser import PDFParser
@@ -34,7 +34,7 @@ args = parser.parse_args()
 
 if args.inn or args.kpp or args.acc or args.bic or args.coracc:
     if args.reqfile != None:
-        sys.stderr.write("Ошибка: одновременно заданы реквизиты в файле и в коммандной строке\n")
+        sys.stderr.write(u"Ошибка: одновременно заданы реквизиты в файле и в коммандной строке\n")
         sys.exit(1)
     our = {}
     for a, o in [("inn", u"ИНН"), ("kpp", u"КПП"), ("acc", u"р/с"), ("bic", u"БИК"), ("coracc", u"Корсчет")]:
@@ -463,50 +463,81 @@ def processMsWord(filename, pr):
     processText(stdoutdata.decode("utf-8"), pr)
 
 def getBicData(bic):
-    f = None
+    url = "http://www.bik-info.ru/bik_%s.html" % bic
     try:
-        f = urllib2.urlopen("http://www.bik-info.ru/bik_%s.html" % bic)
-        page = f.read().decode("cp1251")
-    except URLError: return None
-    finally:
-        if f != None: f.close()
+        f = urllib2.urlopen(url)
+    except urllib2.URLError:
+        sys.stderr.write(u"Ошибка: не удалось загрузить страницу %s\n" % url)
+        return None
+    page = f.read().decode("cp1251")
+    f.close()
     try:
         return {
             u"Корсчет": re.search(u"Корреспондентский счет: <b>(.*?)</b>", page).group(1),
             u"Наименование": re.search(u"Наименование банка: <b>(.*?)</b>", page).group(1),
         }
-    except AttributeError: return None
+    except AttributeError:
+        sys.stderr.write(u"Ошибка: не удалось распознать страницу %s\n" % url)
+        return None
 
-def requestCompanyInfo(inn):
+def requestCompanyInfoFedresurs(inn):
     data = urllib.urlencode({
     "ctl00$MainContent$txtCode": inn,
     "ctl00$MainContent$btnSearch": u"Поиск".encode("utf-8"),
     "__VIEWSTATE":"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",
     "__EVENTVALIDATION":"/wEdAAgIIDiAdZkwuCBwGFg+Yb3wQAkPfS3ALM1l8HYCRLcTjKUF4enLXO3emfMk8iBi1qvRvDs5OXQ11rod7fgapnnyQ2pdoSqiOAqq4PCYWcCsWwd4wD37xIK/Lo7dzZyKenvHGmy602W3dHJKoVjq4UNjn4j8c9nzo0RlxtfBH2PEDg=="
     })
-    req = urllib2.Request("http://www.fedresurs.ru/companies/IsSearching", data)
+    url = "http://www.fedresurs.ru/companies/IsSearching"
+    req = urllib2.Request(url, data)
     fp = None
     try:
         fp = urllib2.urlopen(req)
         orgId = re.search(r"window.location.assign\('/companies/([0-9]+)'\)", fp.read().decode("utf-8")).group(1)
-        fp.close()
-        fp = urllib2.urlopen("http://www.fedresurs.ru/companies/" + orgId)
+        fp.close(); fp = None
+        url = "http://www.fedresurs.ru/companies/" + orgId
+        fp = urllib2.urlopen(url)
         page = fp.read().decode("utf-8")
-    except AttributeError: return None
-    except URLError: return None
-    finally:
-        if fp != None: fp.close()
-    inn2 = re.search(ur"ИНН:</td>\s*<td>([0-9]{10})</td>", page, re.UNICODE).group(1)
-    if inn2 != inn:
-        sys.stderr.write("Ошибка обращения к сайту fedresurs.ru: ИНН не соответствует запрошенному\n")
-        return None
-    try:
+        fp.close(); fp = None
+        inn2 = re.search(ur"ИНН:</td>\s*<td>([0-9]{10})</td>", page, re.UNICODE).group(1)
+        if inn2 != inn:
+            sys.stderr.write(u"Ошибка обращения к сайту fedresurs.ru: ИНН не соответствует запрошенному\n")
+            return None
         return {
             u"КПП": re.search(ur"КПП:</td>\s*<td>([0-9]{9})</td>", page, re.UNICODE).group(1),
             u"Наименование": re.search(ur"<td>Сокращённое фирменное наименование:</td>\s*<td>(.*?)</td>", page, re.UNICODE).group(1),
         }
-    except AttributeError: return None
+    except urllib2.URLError:
+        sys.stderr.write(u"Ошибка: не удалось загрузить страницу %s\n" % url)
+        return None
+    except AttributeError:
+        sys.stderr.write(u"Ошибка: не удалось распознать страницу %s\n" % url)
+        return None
+    finally:
+        if fp != None: fp.close()
 
+def requestCompanyNameIgk(inn):
+    url = "http://online.igk-group.ru/ru/home?inn=" + inn
+    try:
+        f = urllib2.urlopen(url)
+    except urllib2.URLError:
+        sys.stderr.write(u"Ошибка: не удалось загрузить страницу %s\n" % url)
+        return None
+    page = f.read().decode("utf-8")
+    f.close()
+    try:
+        inn2 = re.search(ur"ИНН:</td>\s*<td>([0-9]{10})</td>", page, re.UNICODE).group(1)
+        if inn2 != inn:
+            sys.stderr.write(u"Ошибка обращения к сайту igk-group.ru: ИНН не соответствует запрошенному\n")
+            return None
+        if len(inn) == 12:
+            return "ИП " + re.search(ur"<th>Руководство</th>\s*<td>\s*(.*?)\s*</td>", page, re.UNICODE).group(1)
+        elif len(inn) == 10:
+            return re.search(ur"<th>Краткое название</th>\s*<td colspan=\"3\">\s*(.*?)\s*</td>", page, re.UNICODE).group(1)
+        else: raise AssertionError("Unchecked INN passed")
+
+    except AttributeError:
+        sys.stderr.write(u"Ошибка: не удалось распознать страницу %s\n" % url)
+        return None
 
 def finalizeAndCheck(pr):
     def deleteBank():
@@ -534,9 +565,16 @@ def finalizeAndCheck(pr):
         else:
             sys.stderr.write(u"%s: Ошибка: не удалось получить данные по БИК\n" % pr["filename"])
             if not args.nostrict: deleteBank()
-    if u"ИНН" in pr and len(pr[u"ИНН"]) == 10:
-        ci = requestCompanyInfo(pr[u"ИНН"])
-        if ci:
+
+    if u"ИНН" in pr:
+        ci = None
+        if len(pr[u"ИНН"]) == 10:
+            ci = requestCompanyInfoFedresurs(pr[u"ИНН"])
+            if ci == None:
+                # Иногда fedresurs с первого раза не отвечает, пробуем снова через 1 секунду
+                time.sleep(1)
+                ci = requestCompanyInfoFedresurs(pr[u"ИНН"])
+        if ci != None:
             if ci[u"КПП"] != pr.get(u"КПП", u""):
                 sys.stderr.write(u"%s: Ошибка: не совпадает КПП для %s: в файле %s, в базе %s\n" % (
                         pr["filename"], ci[u"Наименование"], pr.get(u"КПП", u"пусто"), ci[u"КПП"]))
@@ -544,7 +582,7 @@ def finalizeAndCheck(pr):
                 elif u"КПП" not in pr: pr[u"КПП"] = ci[u"КПП"]
             if u"ИНН" in pr: pr[u"Наименование"] = ci[u"Наименование"]
         else:
-            sys.stderr.write(u"%s: Ошибка: не удалось получить данные по ИНН\n" % pr["filename"])
+            pr[u"Наименование"] = requestCompanyNameIgk(pr[u"ИНН"])
     if not pr.get(u"СуммаПрописью"):
         sys.stderr.write(u"%s: Предупреждение: сумма прописью не найдена\n" % pr["filename"])
     vat = pr.get(u"СуммаНДС")
@@ -642,6 +680,7 @@ try:
             sys.stderr.write("%s: unknown extension\n" % f)
         finalizeAndCheck(pr)
         printInvoiceData(pr, fout)
+        fout.flush()
 finally:
     fout.write(fileFooter.encode("cp1251"))
     fout.close()
