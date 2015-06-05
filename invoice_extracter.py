@@ -20,8 +20,8 @@ parser.add_argument("-v", "--verbose", dest="verbose", action='store_true',
                    help='print every mismatched INN')
 parser.add_argument("-q", "--requisites", type=str, default = None, dest="reqfile",
                    help="specify requisites file")
-parser.add_argument("--no-strict", action='store_true', dest="nostrict",
-                   help="don't remove INN/KPP from output when mismatches with database")
+parser.add_argument("--strict", action='store_true', dest="strict",
+                   help="remove KPP and coracc from output when mismatches with federal database")
 parser.add_argument("--inn", type=str, default = None, help="specify INN code")
 parser.add_argument("--kpp", type=str, default = None, help="specify KPP code")
 parser.add_argument("--acc", type=str, default = None, help="specify bank account")
@@ -553,9 +553,6 @@ def finalizeAndCheck(pr):
     def deleteBank():
         for fld in [u"БИК", u"Корсчет", u"р/c"]:
             if fld in pr: del pr[fld]
-    def deleteCompany():
-        for fld in [u"ИНН", u"КПП"]:
-            if fld in pr: del pr[fld]
     for fld in pr:
         if isinstance(pr[fld], Err): del pr[fld]
     if u"р/с" in pr and "БИК" in pr and not checkBicAcc(pr):
@@ -570,14 +567,14 @@ def finalizeAndCheck(pr):
                 else:
                     sys.stderr.write(u"%s: Ошибка: не совпадает корсчёт: в файле %s, в базе %s\n" % (
                         pr["filename"], pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
-                    if args.nostrict and u"Корсчет" not in pr:
+                    if not args.strict and u"Корсчет" not in pr:
                         pr[u"Корсчет"] = bicData[u"Корсчет"]
                     else:
                         deleteBank()
             if u"БИК" in pr: pr[u"Банк"] = bicData[u"Наименование"]
         else:
-            sys.stderr.write(u"%s: Ошибка: не удалось получить данные по БИК\n" % pr["filename"])
-            if not args.nostrict: deleteBank()
+            sys.stderr.write(u"%s: Ошибка: не удалось получить данные по БИК %s\n" % (pr["filename"], u"БИК"))
+            if args.strict: deleteBank()
 
     if u"ИНН" in pr:
         ci = None
@@ -591,9 +588,9 @@ def finalizeAndCheck(pr):
             if ci[u"КПП"] != pr.get(u"КПП", u""):
                 sys.stderr.write(u"%s: Ошибка: не совпадает КПП для %s: в файле %s, в базе %s\n" % (
                         pr["filename"], ci[u"Наименование"], pr.get(u"КПП", u"пусто"), ci[u"КПП"]))
-                if not args.nostrict: deleteCompany()
+                if args.strict: del pr[u"КПП"]
                 elif u"КПП" not in pr: pr[u"КПП"] = ci[u"КПП"]
-            if u"ИНН" in pr: pr[u"Наименование"] = ci[u"Наименование"]
+            pr[u"Наименование"] = ci[u"Наименование"]
         else:
             pr[u"Наименование"] = requestCompanyNameIgk(pr[u"ИНН"])
 
