@@ -1,7 +1,7 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
 
-import os, sys, xlrd, re, io, subprocess, urllib, urllib2, argparse, datetime, time
+import os, sys, xlrd, re, io, subprocess, urllib, urllib2, argparse, datetime, time, math
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfparser import PDFParser
@@ -386,11 +386,22 @@ def processText(text, pr):
 
 def processImage(image, pr):
     debug = False
-    text = image_to_string(image, lang="rus").decode("utf-8")
-    if debug:
-        with open("invext-debug.txt","w") as f:
-            f.write(text.encode("utf-8"))
-    processText(text, pr)
+    def doProcess():
+        text = image_to_string(image, lang="rus").decode("utf-8")
+        if debug:
+            with open("invext-debug.txt","w") as f:
+                f.write(text.encode("utf-8"))
+        processText(text, pr)
+    doProcess()
+    if len(pr)<3 and image.size[0]<1500:
+        for fld in pr.keys():
+            if fld != "filename": del pr[fld]
+        if args.verbose:
+            sys.stderr.write("Не удалось распознать изображение, повтор с более высоким разрешением\n")
+        multiplier = int(math.ceil(1500.0/image.size[0]))
+        image = image.resize(tuple([i * multiplier for i in image.size]), Image.BICUBIC)
+        if debug: image.save("invext-debug.png", "PNG")
+        doProcess()
 
 def processPDF(f, pr):
     debug = False
@@ -560,7 +571,10 @@ def finalizeAndCheck(pr):
                 else:
                     sys.stderr.write(u"%s: Ошибка: не совпадает корсчёт: в файле %s, в базе %s\n" % (
                         pr["filename"], pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
-                    deleteBank()
+                    if args.nostrict and u"Корсчет" not in pr:
+                        pr[u"Корсчет"] = bicData[u"Корсчет"]
+                    else:
+                        deleteBank()
             if u"БИК" in pr: pr[u"Банк"] = bicData[u"Наименование"]
         else:
             sys.stderr.write(u"%s: Ошибка: не удалось получить данные по БИК\n" % pr["filename"])
