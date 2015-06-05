@@ -42,7 +42,7 @@ if args.inn or args.kpp or args.acc or args.bic or args.coracc:
         if val != None: our[o] = val
 elif args.reqfile == None:
     our = {
-        u"Наименование": u"ООО \"Бесконтактные устройства\"",
+        u"Наименование": u"ООО Бесконтактные устройства",
         u"ИНН": "7702818199",
         u"КПП": "770201001",
         u"р/с": "40702810700120030086",
