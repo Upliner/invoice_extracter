@@ -113,14 +113,11 @@ def checkInn(val):
         return innControlDigit(9)
     return innControlDigit(10) and innControlDigit(11)
 
-def checkKpp(val):
-    if len(val) != 9 or not re.match("[0-9]+$", val): return False
-    return True
-def checkBic( val):
-    if len(val) != 9 or not val.startswith("04") or not re.match("[0-9]+$", val): return False
-    return True
+def checkKpp(val): return re.match("[0-9]{9}$", val) != None
+def checkBic(val): return re.match("04[0-9]{7}$", val) != None
+def checkAcc(val): return re.match("[0-9]{20}$", val) != None
 
-checkDict = { u"ИНН": checkInn, u"КПП": checkKpp, u"БИК": checkBic }
+checkDict = { u"ИНН": checkInn, u"КПП": checkKpp, u"БИК": checkBic, u"р/с": checkAcc, u"Корсчет": checkAcc }
 
 for fld, check in checkDict.iteritems():
     if fld in our and not check(our[fld]):
