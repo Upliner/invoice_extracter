@@ -311,7 +311,7 @@ def findSumsInWords(text, pr):
 
 def findBankAccounts(text, pr):
     for w in re.finditer(u"[0-9О]{4} *[0-9О]81[0О] *[0-9О]{4} *[0-9О]{4} *[0-9О]{4}\\b", text, drp):
-        w = w.group(0).replace(u"О", "0") # Многие OCR-движки путают букву О с нулём
+        w = w.group(0).replace(" ","").replace(u"О", "0") # Многие OCR-движки путают букву О с нулём
         if w[5:8] == "810":
             if w[0] == "4":
                 fillField(pr, u"р/с", w)
@@ -374,11 +374,14 @@ def processText(text, pr):
     for r in re.finditer(ur"Итого( [а-яА-ЯёЁ ]*)?:?\n? *([0-9\., ]*)", text, drp):
         if r.group(1) == None or (re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
             fillTotal(pr, parse(r.group(2).strip(".,")))
+
     for r in re.finditer(ur"(?:Всего |Итого |Сумма |в т\.ч\.|в том числе |включая ) *" +
             ur"НДС *(\([0-9%]*)?(?: [а-яА-ЯёЁ \)]*)?\.?:?\n? *([0-9\., ]*)", text, drp):
         if r.group(1) != None: fillVatType(pr, r.group(1))
         fillField(pr, u"СуммаНДС", parse(r.group(2).strip(".,")))
-    if re.search(ur"Без *(налога)? *\(?НДС", text, drp):
+
+    rr = re.search(ur"(Сумма|Цена)? *Без *(налога)? *\(?НДС", text, drp)
+    if rr != None and rr.group(1) == None:
         fillField(pr, u"СтавкаНДС", u"БезНДС")
 
     findSumsInWords(text, pr)
@@ -416,6 +419,7 @@ def processPDF(f, pr):
                     if isinstance(line, LTTextLine):
                         processPdfLine(layout, line, pr)
         if u"р/с" not in pr or u"ИНН" not in pr or u"КПП" not in pr or u"БИК" not in pr or u"Счет" not in pr:
+            foundImages = False
             # Файл не удалось полностью распознать, ищем картинки, перекрывающие всю страницу
             for obj in layout:
                 if isinstance(obj, LTFigure):
@@ -423,8 +427,8 @@ def processPDF(f, pr):
                         if (isinstance(img, LTImage) and
                                 img.x0<x0 and img.y0<y0 and img.x1>x1 and img.y1>y1):
                             processImage(Image.open(BytesIO(img.stream.get_rawdata())), pr)
-                            break
-            else:
+                            foundImages = True
+            if not foundImages:
                 # Подходящих картинок нет, используем fallback метод
                 itc.process_page(page)
                 text = parsedTextStream.getvalue().decode("utf-8")
@@ -521,7 +525,8 @@ def finalizeAndCheck(pr):
         bicData = getBicData(pr[u"БИК"])
         if bicData:
             if bicData[u"Корсчет"] != pr.get(u"Корсчет", u""):
-                sys.stderr.write(u"%s: Ошибка: не совпадает корсчёт\n" % pr["filename"])
+                sys.stderr.write(u"%s: Ошибка: не совпадает корсчёт: в файле %s, в базе %s\n" % (
+                    pr["filename"], pr.get(u"Корсчет", u"пусто"), "пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
                 deleteBank()
             else:
                 pr[u"Банк"] = bicData[u"Наименование"]
@@ -532,8 +537,10 @@ def finalizeAndCheck(pr):
         ci = requestCompanyInfo(pr[u"ИНН"])
         if ci:
             if ci[u"КПП"] != pr.get(u"КПП", u""):
-                sys.stderr.write(u"%s: Ошибка: не совпадает КПП\n" % pr["filename"])
+                sys.stderr.write(u"%s: Ошибка: не совпадает КПП для %s: в файле %s, в базе %s\n" % (
+                        pr["filename"], ci[u"Наименование"], pr.get(u"КПП", u"пусто"), ci[u"КПП"]))
                 if not args.nostrict: deleteCompany()
+                elif u"КПП" not in pr: pr[u"КПП"] = ci[u"КПП"]
             else:
                 pr[u"Наименование"] = ci[u"Наименование"]
         else:
