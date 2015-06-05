@@ -596,6 +596,7 @@ def finalizeAndCheck(pr):
             if u"ИНН" in pr: pr[u"Наименование"] = ci[u"Наименование"]
         else:
             pr[u"Наименование"] = requestCompanyNameIgk(pr[u"ИНН"])
+
     if not pr.get(u"СуммаПрописью"):
         sys.stderr.write(u"%s: Предупреждение: сумма прописью не найдена\n" % pr["filename"])
     vat = pr.get(u"СуммаНДС")
@@ -605,11 +606,12 @@ def finalizeAndCheck(pr):
             sys.stderr.write(u"%s: Ошибка: некорректная сумма НДС: %r\n" % (pr["filename"], vat))
             del pr[u"СуммаНДС"]
 
+    if u"ИтогоСНДС" not in pr and u"Итого" in pr: pr[u"ИтогоСНДС"] = pr[u"Итого"]
+
 def printInvoiceData(pr, fout):
     item = itemTemplate
     for fld in [u"ИНН", u"КПП", u"Наименование", u"р/с", u"Банк", u"БИК", u"Корсчет", u"ИтогоСНДС"]:
         item = item.replace(u"{%s}" % fld, unicode(pr.get(fld, u"")))
-    item = item.replace(u"ИтогоСНДС", unicode(pr.get(u"Итого", u"")))
     try:
         paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"], drp).group(1)
         vatRate = pr.get(u"СтавкаНДС")
