@@ -687,7 +687,7 @@ try:
         f_, ext = os.path.splitext(f)
         ext = ext.lower()
         pr = { "filename": f} # Parse result
-        if (ext in ['.png','.bmp','.jpg','.gif']):
+        if (ext in ['.png','.bmp','.jpg','.jpeg','.gif']):
             processImage(Image.open(f), pr)
         elif (ext == '.pdf'):
             with open(f, "rb") as f: processPDF(f, pr)
