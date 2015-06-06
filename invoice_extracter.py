@@ -620,7 +620,7 @@ def printInvoiceData(pr, fout):
             paydetails += u", НДС не облагается"
         elif vat != None:
             paydetails += u", в т.ч. НДС"
-            if vatRate != None: paydetails += u"(%s)" % vatRate
+            if vatRate != None: paydetails += u" %s" % vatRate
             paydetails += u" " + unicode(pr.get(u"СуммаНДС"))
         item = item.replace(u"{НазначениеПлатежа}", paydetails)
     except AttributeError: pass
