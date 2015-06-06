@@ -550,6 +550,29 @@ def requestCompanyNameIgk(inn):
         sys.stderr.write(u"Ошибка: не удалось распознать страницу %s\n" % url)
         return None
 
+def finalizeDoc(pr):
+    if u"ИтогоСНДС" not in pr and u"Итого" in pr: pr[u"ИтогоСНДС"] = pr[u"Итого"]
+    # Автоматическое определение ставки НДС если явно не указано в документе
+    vat = pr.get(u"СуммаНДС")
+    amt = pr.get(u"ИтогоСНДС")
+    if u"СтавкаНДС" not in pr and amt > 1 and vat and abs(amt/1.18*0.18 - vat)<0.05:
+        pr[u"СтавкаНДС"] = "18%"
+    try:
+        paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"], drp).group(1)
+        if u"ИтогоСНДС" in pr:
+            paydetails += u" Сумма %.2f" % pr[u"ИтогоСНДС"]
+        vatRate = pr.get(u"СтавкаНДС")
+        vat = pr.get(u"СуммаНДС")
+        if vatRate == u"БезНДС" or vat == 0:
+            paydetails += u", НДС не облагается"
+        elif vat != None:
+            paydetails += u", в т.ч. НДС"
+            if vatRate != None: paydetails += u" (%s)" % vatRate
+            paydetails += u" - " + unicode(pr.get(u"СуммаНДС"))
+        pr[u"НазначениеПлатежа"] = paydetails
+    except AttributeError: pass
+    except KeyError: pass
+
 def finalizeAndCheck(pr):
     def deleteBank():
         for fld in [u"БИК", u"Корсчет", u"р/c"]:
@@ -602,42 +625,25 @@ def finalizeAndCheck(pr):
 
     # Проверяем, чтобы сумма НДС не была слишком большой (это значит, что некорректно подхватилось другое число)
     vat = pr.get(u"СуммаНДС")
-    amt = pr.get(u"ИтогоСНДС", pr.get("Итого"))
+    amt = pr.get(u"ИтогоСНДС")
     if vat != None and amt != None:
         if vat>(amt*0.18+0.1):
             sys.stderr.write(u"%s: Ошибка: некорректная сумма НДС: %r\n" % (pr["filename"], vat))
             del pr[u"СуммаНДС"]
 
-    # Автоматическое определение ставки НДС если явно не указано в документе
-    if u"СтавкаНДС" not in pr and amt > 1 and vat and abs(amt/1.18*0.18 - vat)<0.05:
-        pr[u"СтавкаНДС"] = "18%"
+    finalizeDoc(pr) # Повторно финализируем после прохождения всех проверок
 
 def printMainInvoiceData(pr, fout):
     item = itemTemplate
     if u"Счет" in pr: fout.write(pr[u"Счет"] + "\n")
     else: fout.write(u"Номер счёта не найден\n")
-    for fld in [u"ИНН", u"р/с", u"БИК", u"ИтогоСНДС", u"СтавкаНДС", u"СуммаНДС"]:
+    for fld in [u"ИНН", u"р/с", u"БИК", u"НазначениеПлатежа"]:
         fout.write(u"%s: %s\n" % (fld, pr.get(fld, u"не найдено")))
 
 def outputTo1C(pr, fout):
     item = itemTemplate
-    for fld in [u"ИНН", u"КПП", u"Наименование", u"р/с", u"Банк", u"Банк2", u"БИК", u"Корсчет", u"ИтогоСНДС"]:
+    for fld in [u"ИНН", u"КПП", u"Наименование", u"р/с", u"Банк", u"Банк2", u"БИК", u"Корсчет", u"ИтогоСНДС", u"НазначениеПлатежа"]:
         item = item.replace(u"{%s}" % fld, unicode(pr.get(fld, u"")))
-    try:
-        paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"], drp).group(1)
-        if u"ИтогоСНДС" in pr:
-            paydetails += u" Сумма %.2f" % pr[u"ИтогоСНДС"]
-        vatRate = pr.get(u"СтавкаНДС")
-        vat = pr.get(u"СуммаНДС")
-        if vatRate == u"БезНДС" or vat == 0:
-            paydetails += u", НДС не облагается"
-        elif vat != None:
-            paydetails += u", в т.ч. НДС"
-            if vatRate != None: paydetails += u" (%s)" % vatRate
-            paydetails += u" - " + unicode(pr.get(u"СуммаНДС"))
-        item = item.replace(u"{НазначениеПлатежа}", paydetails)
-    except AttributeError: pass
-    except KeyError: pass
     item = re.sub(r"\{.*?\}","", item)
     fout.write(item.encode("cp1251"))
 
@@ -714,7 +720,7 @@ try:
         else:
             sys.stderr.write("%s: unknown extension\n" % f)
         if len(pr)>1:
-            if u"ИтогоСНДС" not in pr and u"Итого" in pr: pr[u"ИтогоСНДС"] = pr[u"Итого"]
+            finalizeDoc(pr)
             printMainInvoiceData(pr, sys.stderr)
             finalizeAndCheck(pr)
             outputTo1C(pr, fout)
