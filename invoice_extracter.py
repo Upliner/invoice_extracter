@@ -70,33 +70,27 @@ drp = re.UNICODE | re.IGNORECASE # default regexp parameters
 # цифрами, совпадающими с ИНН - как КПП, первое девятизначное, начинающиеся с 04 -- как БИК
 #
 
+
+class Err:
+    def __repr__():
+        return ""
+
 def epsilonEquals(a,b):
     if a == None or b == None: return False
+    if isinstance(a, Err) or isinstance(b, Err): return False
     test = abs(a-b)
     return test < 0.0001
 
-def fillTotal(pr, val):
-    if val == None: return
-    if epsilonEquals(val, pr.get(u"ИтогоБезНДС")): return
-    if epsilonEquals(val, pr.get(u"ИтогоСНДС")): return
-    oldTotal = pr.get(u"Итого")
-    if oldTotal != None:
-        if oldTotal != val:
-            fillField(pr, u"ИтогоБезНДС", min(val, oldTotal))
-            fillField(pr, u"ИтогоСНДС", max(val, oldTotal))
-            del pr[u"Итого"]
+def parse(num):
+    num = re.sub(ur"руб(лей)?\.?| ","", num).strip(",. \n")
+    if (re.search(",[0-9][0-9]?$", num)): # Если число оканчивается на ",00", тогда считаем, что запятая отделяет десятичные знаки
+        num = num.replace(",", ".")
     else:
-        pr[u"Итого"] = val
-
-def fillVatType(pr, content):
-    if content == u"Без НДС" or content == u"Без налога (НДС)":
-        fillField(u"СтавкаНДС", u"БезНДС")
-        fillField(u"СуммаНДС", 0)
-    if "18%" in content: fillField(pr, u"СтавкаНДС", u"18%")
-    if "10%" in content: fillField(pr, u"СтавкаНДС", u"10%")
-    if "0%"  in content:
-        fillField(pr, u"СтавкаНДС", u"0%") 
-        fillField(pr, u"СуммаНДС", 0)
+        num = num.replace(",", "") # Иначе считаем, что запятая отделяет тысячи -- удаляем их
+    try:
+       return float(num)
+    except ValueError:
+       return None
 
 innChk = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
 
@@ -124,10 +118,6 @@ for fld, check in checkDict.iteritems():
         sys.stderr.write(u"Ошибка: задан некорректный %s нашей организации: %s\n" % (fld, our[fld]))
         exit(1)
 
-class Err:
-    def __repr__():
-        return ""
-
 # Заполняет поле с именем fld, проверяет его, и проверяет, чтобы в поле уже не присутствовало другое значение
 def fillField(pr, fld, value):
     if value == None: return
@@ -145,8 +135,50 @@ def fillField(pr, fld, value):
        if fld == u"Счет": return
        sys.stderr.write(u"%s: Найдено несколько различных %s: %s и %s\n" % (pr["filename"], fld, oldVal, value))
        pr[fld]=Err()
+       return
     pr[fld] = value
 
+def fillTotal(pr, val):
+    if val == None: return
+    if epsilonEquals(val, pr.get(u"ИтогоБезНДС")): return
+    if epsilonEquals(val, pr.get(u"ИтогоСНДС")): return
+    oldTotal = pr.get(u"Итого")
+    if oldTotal != None:
+        if oldTotal != val:
+            fillField(pr, u"ИтогоБезНДС", min(val, oldTotal))
+            fillField(pr, u"ИтогоСНДС", max(val, oldTotal))
+            del pr[u"Итого"]
+    else:
+        pr[u"Итого"] = val
+
+# Функции по поиску и обработке строк с данными по НДС
+def checkWithoutVat(pr, text):
+    rr = re.search(ur"(Сумма|Цена|Итого|Всего)?\s*? *Без *(налога)? *\(?НДС", text, drp)
+    if (rr != None and rr.group(1) == None) or u"НДС не облагается" in text:
+        fillField(pr, u"СтавкаНДС", u"БезНДС")
+        fillField(pr, u"СуммаНДС", 0)
+
+def fillVatType(pr, content):
+    if "18%" in content: fillField(pr, u"СтавкаНДС", u"18%")
+    if "10%" in content: fillField(pr, u"СтавкаНДС", u"10%")
+    if "0%"  in content:
+        fillField(pr, u"СтавкаНДС", u"0%")
+        fillField(pr, u"СуммаНДС", 0)
+
+vatIntro = ur"(?:Всего|Итого|Сумма|в т\. ?ч\.|в том числе|включая) *"
+
+def checkVatAmount(pr, text):
+    for r in re.finditer(vatIntro +                                                     # Вводное слово
+             ur"НДС *(?:по ставке)? *\(?([0-9%]*)?(?: [а-яА-ЯёЁ \)]*)? *[\.:-]?\s*"     # Ставка НДС
+             ur"(?:([0-9\., ]*) *(?:руб(?:лей)?\.? *([0-9][0-9]?) *коп(?:еек)?\.?)?)?", # Сумма НДС
+             text, drp):
+        if r.group(1) != None: fillVatType(pr, r.group(1)) # group 1: ставка НДС
+        vat = None
+        if r.group(2) != None:  # group 2: Сумма НДС
+            vat = parse(r.group(2))
+        if r.group(3) != None:  # group 3: Копейки в сумме НДС
+            vat += float(r.group(3))/100
+        if vat != None: fillField(pr, u"СуммаНДС", vat)
 
 accChk = [7,1,3]*7+[7,1]
 # Проверка ключа банковского счёта по БИКу и номеру счёта
@@ -179,7 +211,7 @@ def stripInvoiceNumber(num):
 
 def processXlsCell(sht, row, col, pr):
     try:
-        content = unicode(sht.cell_value(row, col))
+        content = unicode(sht.cell_value(row, col)).strip()
     except IndexError:
         return
     def getValueToTheRight(col):
@@ -220,12 +252,6 @@ def processPdfLine(pdf, pl, pr):
         return (pdfLine.get_text(), pdfLine)
     processCellContent(content, getValueToTheRight, pl, pr)
 
-def parse(num):
-    try:
-       return float(re.sub(ur"руб\.?| ","", num).replace(",",".").strip())
-    except ValueError:
-       return None
-
 def processCellContent(content, getValueToTheRight, firstCell, pr):
     def getSecondValue(separator = None):
         # Значение может находиться как в текущей ячейке, так и в следующей
@@ -264,7 +290,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             fillField(pr, fld, val)
             return
 
-    if re.match(ur"Сч[её]т *(на оплату|№|.*? от [0-9][0-9]?[\. ])", content, drp):
+    if re.match(ur"Сч[её]т\s*(на оплату|№|.*? от [0-9][0-9]?[\. ])", content, drp):
         text = content
         val, cell = getValueToTheRight(firstCell)
         while val != None:
@@ -284,10 +310,12 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         return
 
     if u"НДС" in content:
+        checkWithoutVat(pr, content)
         fillVatType(pr, content)
-        if re.search(ur"(Всего|Итого|Сумма|Включая|в т\.ч\.|в том числе|НДС *\(?[0-9]*%\)? *:?).*?", content, drp):
-            if ":" in content: val = getSecondValue(":")
-            else: val = getValueToTheRight(firstCell)[0]
+        checkVatAmount(pr, content)
+        if "СуммаНДС" in pr: return
+        if re.search(vatIntro, content, drp): # Возможно, сумма НДС находится в другой ячейке
+            val = getValueToTheRight(firstCell)[0]
             if val == None: return
             if (re.match(u"Без", val, drp)):
                 fillField(pr, u"СтавкаНДС", u"БезНДС")
@@ -297,6 +325,12 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             return
 
     findBankAccounts(content, pr)
+
+def hasIncompleteFields(pr):
+    if "ИтогоСНДС" not in pr and "Итого" not in pr: return True
+    for i in [u"р/с", u"ИНН", u"КПП", u"БИК", u"Счет", u"СуммаНДС"]:
+        if i not in pr: return True
+    return False
 
 def findSumsInWords(text, pr):
     for psum in searchSums(text):
@@ -328,7 +362,7 @@ def processText(text, pr):
         for val in re.finditer("\\b" + fld + u"\\n? *(%s)\\b" % regexp, text, drp):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
-    rr = re.search(u"^ *Сч[её]т *(на оплату|№|.*?\\bот *[0-9]).*", text, drp | re.MULTILINE)
+    rr = re.search(ur"^ *Сч[её]т\s*(на оплату|№|.*?\bот *[0-9]).*", text, drp | re.MULTILINE)
     if rr: fillField(pr, u"Счет", stripInvoiceNumber(rr.group(0)))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
@@ -369,18 +403,12 @@ def processText(text, pr):
             fillField(pr, u"КПП", val)
 
     # Ищем итоги, ставки и суммы НДС
-    for r in re.finditer(ur"Итого( [а-яА-ЯёЁ ]*)?:?\n? *([0-9\., ]*)", text, drp):
+    for r in re.finditer(ur"Итого( [а-яА-ЯёЁ ]*)?:?\s*([0-9\., ]*)", text, drp):
         if r.group(1) == None or (re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
             fillTotal(pr, parse(r.group(2).strip(".,")))
 
-    for r in re.finditer(ur"(?:Всего |Итого |Сумма |в т\.ч\.|в том числе |включая ) *" +
-            ur"НДС *(?:по ставке)? *\(?([0-9%]*)?(?: [а-яА-ЯёЁ \)]*)?\.?:?\n? *([0-9\., ]*)", text, drp):
-        if r.group(1) != None: fillVatType(pr, r.group(1))
-        fillField(pr, u"СуммаНДС", parse(r.group(2).strip(".,")))
-
-    rr = re.search(ur"(Сумма|Цена)? *Без *(налога)? *\(?НДС", text, drp)
-    if rr != None and rr.group(1) == None:
-        fillField(pr, u"СтавкаНДС", u"БезНДС")
+    checkWithoutVat(pr, text)
+    checkVatAmount(pr, text)
 
     findSumsInWords(text, pr)
 
@@ -427,9 +455,9 @@ def processPDF(f, pr):
                 for line in obj:
                     if isinstance(line, LTTextLine):
                         processPdfLine(layout, line, pr)
-        if u"р/с" not in pr or u"ИНН" not in pr or u"КПП" not in pr or u"БИК" not in pr or u"Счет" not in pr:
-            foundImages = False
+        if hasIncompleteFields(pr):
             # Файл не удалось полностью распознать, ищем картинки, перекрывающие всю страницу
+            foundImages = False
             for obj in layout:
                 if isinstance(obj, LTFigure):
                     for img in obj:
@@ -453,7 +481,7 @@ def processExcel(filename, pr):
         for row in range(sht.nrows):
             for col in range(sht.ncols):
                 processXlsCell(sht, row, col, pr)
-    if u"р/с" not in pr or u"ИНН" not in pr or u"КПП" not in pr or u"БИК" not in pr or u"Счет" not in pr:
+    if hasIncompleteFields(pr):
         text = ""
         for sht in wbk.sheets():
             for row in range(sht.nrows):
@@ -551,6 +579,8 @@ def requestCompanyNameIgk(inn):
         return None
 
 def finalizeDoc(pr):
+    for fld in pr.keys():
+        if isinstance(pr[fld], Err): del pr[fld]
     if u"ИтогоСНДС" not in pr and u"Итого" in pr: pr[u"ИтогоСНДС"] = pr[u"Итого"]
     # Автоматическое определение ставки НДС если явно не указано в документе
     vat = pr.get(u"СуммаНДС")
@@ -577,17 +607,20 @@ def finalizeAndCheck(pr):
     def deleteBank():
         for fld in [u"БИК", u"Корсчет", u"р/c"]:
             if fld in pr: del pr[fld]
-    for fld in pr:
-        if isinstance(pr[fld], Err): del pr[fld]
     if u"р/с" in pr and "БИК" in pr and not checkBicAcc(pr):
         deleteBank()
     if u"БИК" in pr:
         bicData = getBicData(pr[u"БИК"])
         if bicData:
             if bicData[u"Корсчет"] != pr.get(u"Корсчет", ""):
-                if bicData[u"Корсчет"] == "" and pr[u"Корсчет"] == our.get(u"Корсчет"):
-                    # Распознался наш корсчёт, на самом деле корсчёта быть не должно
-                    del pr[u"Корсчет"]
+                if pr[u"Корсчет"] == our.get(u"Корсчет"):
+                    if args.verbose: sys.stderr.write(u"%s: Настоящий корсчёт не распознался: в файле %s, в базе %s\n" % (
+                        pr["filename"], pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
+                    # Распознался наш корсчёт, настоящий корсчёт не распознался, либо его нет
+                    if len(bicData[u"Корсчет"]) == 0:
+                        del pr[u"Корсчет"] # На самом деле корсчёта быть не должно
+                    else:
+                        pr[u"Корсчет"] = bicData[u"Корсчет"] # На самом деле корсчёт другой, но он не распознался, возможно из-за OCR
                 else:
                     sys.stderr.write(u"%s: Ошибка: не совпадает корсчёт: в файле %s, в базе %s\n" % (
                         pr["filename"], pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
