@@ -619,6 +619,8 @@ def outputTo1C(pr, fout):
         item = item.replace(u"{%s}" % fld, unicode(pr.get(fld, u"")))
     try:
         paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"], drp).group(1)
+        if u"ИтогоСНДС" in pr:
+            paydetails += u" Сумма %.2f" % pr[u"ИтогоСНДС"]
         vatRate = pr.get(u"СтавкаНДС")
         vat = pr.get(u"СуммаНДС")
         if vatRate == u"БезНДС" or vat == 0:
@@ -626,7 +628,7 @@ def outputTo1C(pr, fout):
         elif vat != None:
             paydetails += u", в т.ч. НДС"
             if vatRate != None: paydetails += u" %s" % vatRate
-            paydetails += u" " + unicode(pr.get(u"СуммаНДС"))
+            paydetails += u" - " + unicode(pr.get(u"СуммаНДС"))
         item = item.replace(u"{НазначениеПлатежа}", paydetails)
     except AttributeError: pass
     except KeyError: pass
