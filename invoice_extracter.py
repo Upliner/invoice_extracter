@@ -606,9 +606,14 @@ def finalizeAndCheck(pr):
             sys.stderr.write(u"%s: Ошибка: некорректная сумма НДС: %r\n" % (pr["filename"], vat))
             del pr[u"СуммаНДС"]
 
-    if u"ИтогоСНДС" not in pr and u"Итого" in pr: pr[u"ИтогоСНДС"] = pr[u"Итого"]
+def printMainInvoiceData(pr, fout):
+    item = itemTemplate
+    if u"Счет" in pr: fout.write(pr[u"Счет"] + "\n")
+    else: fout.write(u"Номер счёта не найден\n")
+    for fld in [u"ИНН", u"р/с", u"БИК", u"ИтогоСНДС", u"СтавкаНДС", u"СуммаНДС"]:
+        fout.write(u"%s: %s\n" % (fld, pr.get(fld, u"не найдено")))
 
-def printInvoiceData(pr, fout):
+def outputTo1C(pr, fout):
     item = itemTemplate
     for fld in [u"ИНН", u"КПП", u"Наименование", u"р/с", u"Банк", u"Банк2", u"БИК", u"Корсчет", u"ИтогоСНДС"]:
         item = item.replace(u"{%s}" % fld, unicode(pr.get(fld, u"")))
@@ -687,6 +692,7 @@ try:
         f_, ext = os.path.splitext(f)
         ext = ext.lower()
         pr = { "filename": f} # Parse result
+        sys.stderr.write(f + "\n")
         if (ext in ['.png','.bmp','.jpg','.jpeg','.gif']):
             processImage(Image.open(f), pr)
         elif (ext == '.pdf'):
@@ -700,8 +706,11 @@ try:
         else:
             sys.stderr.write("%s: unknown extension\n" % f)
         if len(pr)>1:
+            if u"ИтогоСНДС" not in pr and u"Итого" in pr: pr[u"ИтогоСНДС"] = pr[u"Итого"]
+            printMainInvoiceData(pr, sys.stderr)
             finalizeAndCheck(pr)
-            printInvoiceData(pr, fout)
+            outputTo1C(pr, fout)
+        else: sys.stderr.write("Не распознано\n")
         fout.flush()
 finally:
     fout.write(fileFooter.encode("cp1251"))
