@@ -609,7 +609,7 @@ def finalizeAndCheck(pr):
             del pr[u"СуммаНДС"]
 
     # Автоматическое определение ставки НДС если явно не указано в документе
-    if u"СтавкаНДС" not in pr and amt > 1 and abs(amt/1.18*0.18 - vat)<0.05:
+    if u"СтавкаНДС" not in pr and amt > 1 and vat and abs(amt/1.18*0.18 - vat)<0.05:
         pr[u"СтавкаНДС"] = "18%"
 
 def printMainInvoiceData(pr, fout):
