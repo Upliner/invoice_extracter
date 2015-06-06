@@ -599,12 +599,18 @@ def finalizeAndCheck(pr):
 
     if not pr.get(u"СуммаПрописью"):
         sys.stderr.write(u"%s: Предупреждение: сумма прописью не найдена\n" % pr["filename"])
+
+    # Проверяем, чтобы сумма НДС не была слишком большой (это значит, что некорректно подхватилось другое число)
     vat = pr.get(u"СуммаНДС")
     amt = pr.get(u"ИтогоСНДС", pr.get("Итого"))
     if vat != None and amt != None:
         if vat>(amt*0.18+0.1):
             sys.stderr.write(u"%s: Ошибка: некорректная сумма НДС: %r\n" % (pr["filename"], vat))
             del pr[u"СуммаНДС"]
+
+    # Автоматическое определение ставки НДС если явно не указано в документе
+    if u"СтавкаНДС" not in pr and amt > 1 and abs(amt/1.18*0.18 - vat)<0.05:
+        pr[u"СтавкаНДС"] = "18%"
 
 def printMainInvoiceData(pr, fout):
     item = itemTemplate
@@ -627,7 +633,7 @@ def outputTo1C(pr, fout):
             paydetails += u", НДС не облагается"
         elif vat != None:
             paydetails += u", в т.ч. НДС"
-            if vatRate != None: paydetails += u" %s" % vatRate
+            if vatRate != None: paydetails += u" (%s)" % vatRate
             paydetails += u" - " + unicode(pr.get(u"СуммаНДС"))
         item = item.replace(u"{НазначениеПлатежа}", paydetails)
     except AttributeError: pass
