@@ -576,7 +576,7 @@ def finalizeAndCheck(pr):
                 pr[u"Банк"] = bicData[u"Наименование"]
                 pr[u"Банк2"] = u"г. " + bicData[u"Город"]
         else:
-            sys.stderr.write(u"%s: Ошибка: не удалось получить данные по БИК %s\n" % (pr["filename"], u"БИК"))
+            sys.stderr.write(u"%s: Ошибка: не удалось получить данные по БИК %s\n" % (pr["filename"], pr[u"БИК"]))
             if args.strict: deleteBank()
 
     if u"ИНН" in pr:
