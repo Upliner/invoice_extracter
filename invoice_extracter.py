@@ -177,16 +177,20 @@ def fillVatType(pr, content):
 vatIntro = ur"(?:Всего|Итого|Сумма|в\sт\.\s?ч\.|в\sтом\sчисле|включая)\s*НДС"
 
 def checkVatAmount(pr, text):
-    for r in re.finditer(vatIntro +                                                      # Вводные слова
-             ur"\s*(?:по\sставке)?\s*\(?([0-9%]*)?(?:[^0-9\n]*)?\s*"                        # Ставка НДС
+    for r in re.finditer(vatIntro +                                                         # Вводные слова
+             ur"\s*(?:по\sставке)?\s*\(?([0-9]*%)?([^0-9\n]*)?\s*"                          # Ставка НДС
              ur"(?:([0-9\.,\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
+
         if r.group(1) != None: fillVatType(pr, r.group(1)) # group 1: ставка НДС
+        if r.group(2) != None and u"рубл" in r.group(2):
+            continue # Игнорировать сумму НДС прописью, она обрабатывается в другом месте
+
         vat = None
-        if r.group(2) != None:  # group 2: Сумма НДС
-            vat = parse(r.group(2))
-        if r.group(3) != None:  # group 3: Копейки в сумме НДС
-            vat += float(r.group(3))/100
+        if r.group(3) != None:  # group 3: Сумма НДС
+            vat = parse(r.group(3))
+        if r.group(4) != None:  # group 4: Копейки в сумме НДС
+            vat += float(r.group(4))/100
         if vat != None: fillField(pr, u"СуммаНДС", vat)
 
 accChk = [7,1,3]*7+[7,1]
@@ -357,7 +361,11 @@ def findSumsInWords(text, pr):
         if epsilonEquals(psum, pr.get(u"Итого")):
            del pr[u"Итого"]
         elif epsilonEquals(psum, pr.get(u"СуммаНДС")):
-            return
+            continue
+        oldValue = pr.get(u"ИтогоСНДС")
+        if oldValue != None and oldValue > 1 and abs(oldValue/1.18*0.18-psum)<0.05:
+            fillField(pr, u"СуммаНДС", psum)
+            continue
         fillField(pr, u"ИтогоСНДС", psum)
         pr[u"СуммаПрописью"] = True
 
@@ -451,19 +459,24 @@ def processImage(image, pr):
         if debug: image.save("invext-debug.png", "PNG")
         doProcess()
 
+def pdfToTextPoppler(filename):
+    debug = False
+    sp = subprocess.Popen(["pdftotext", filename, "-"], stdout=subprocess.PIPE, stderr=sys.stderr)
+    txtdata, stderrdata = sp.communicate()
+    if sp.poll() != 0:
+        errWrite("%s: Call to pdftotext failed, errcode is %i\n" % (filename, sp.poll()))
+        return ""
+    return txtdata.decode("utf-8")
+
 def processPDF(f, pr):
     debug = False
     parser = PDFParser(f)
     document = PDFDocument(parser)
     rsrcmgr = PDFResourceManager()
-    laparams = LAParams()
-    daggr = PDFPageAggregator(rsrcmgr, laparams=laparams)
-    parsedTextStream = BytesIO()
-    dtc = TextConverter(rsrcmgr, parsedTextStream, codec="utf-8", laparams=laparams)
-    iaggr = PDFPageInterpreter(rsrcmgr, daggr)
-    itc = PDFPageInterpreter(rsrcmgr, dtc)
+    daggr = PDFPageAggregator(rsrcmgr, laparams=LAParams())
+    interpreter = PDFPageInterpreter(rsrcmgr, daggr)
     for page in PDFPage.create_pages(document):
-        iaggr.process_page(page)
+        interpreter.process_page(page)
         layout = daggr.get_result()
         x0, y0, x1, y1 = (sys.maxint, sys.maxint, -sys.maxint, -sys.maxint) # Text bbox
         for obj in layout:
@@ -494,14 +507,8 @@ def processPDF(f, pr):
                             processImage(pImage, pr)
                             foundImages = True
             if not foundImages:
-                # Подходящих картинок нет, используем fallback метод
-                itc.process_page(page)
-                text = parsedTextStream.getvalue().decode("utf-8")
-                if debug:
-                    with open("invext-debug.txt","w") as f:
-                        f.write(text.encode("utf-8"))
-                processText(text, pr)
-                parsedTextStream = BytesIO()
+                # Подходящих картинок нет, используем pdftotext
+                processText(pdfToTextPoppler(pr["filename"]), pr)
 
 def processExcel(filename, pr):
     wbk = xlrd.open_workbook(filename)
