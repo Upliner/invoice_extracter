@@ -648,7 +648,7 @@ def finalizeAndCheck(pr):
                 ci = requestCompanyInfoFedresurs(pr[u"ИНН"])
         if ci != None:
             if ci[u"КПП"] != pr.get(u"КПП", u""):
-                errWrite(u"%s: Ошибка: не совпадает КПП для %s: в файле %s, в базе %s\n" % (
+                errWrite(u"%s: Не совпадает КПП для %s: в файле %s, в базе %s\n" % (
                         pr["filename"], ci[u"Наименование"], pr.get(u"КПП", u"пусто"), ci[u"КПП"]))
                 if args.strict: del pr[u"КПП"]
                 elif u"КПП" not in pr: pr[u"КПП"] = ci[u"КПП"]
