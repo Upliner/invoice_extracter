@@ -215,7 +215,11 @@ def stripInvoiceNumber(num):
 
 def processXlsCell(sht, row, col, pr):
     try:
-        content = unicode(sht.cell_value(row, col)).strip()
+        content = sht.cell_value(row, col)
+        if isinstance(content, float):
+            content = u"%.2f" % content
+        else:
+            content = unicode(content).strip()
     except IndexError:
         return
     def getValueToTheRight(col):
@@ -230,6 +234,7 @@ def processXlsCell(sht, row, col, pr):
             col = col + 1
         if content == u"БИК" and type(val) in [int, float] and 40000000 <= val < 50000000:
             val = "0" + unicode(val) # Исправление БИКа в некоторых xls-файлах
+        elif isinstance(val, float): val = u"%.2f" % val
         elif val != None: val = unicode(val)
         return (val, col)
     processCellContent(content, getValueToTheRight, col, pr)
@@ -490,7 +495,9 @@ def processExcel(filename, pr):
         for sht in wbk.sheets():
             for row in range(sht.nrows):
                 for col in range(sht.ncols):
-                    text += unicode(sht.cell_value(row, col)) + "\n"
+                    val = sht.cell_value(row, col)
+                    if isinstance(val, float): text += u"%.2f\n" % val
+                    else: text += unicode(sht.cell_value(row, col)) + "\n"
         processText(text, pr)
 
 def processMsWord(filename, pr):
