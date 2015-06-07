@@ -478,7 +478,15 @@ def processPDF(f, pr):
                     for img in obj:
                         if (isinstance(img, LTImage) and
                                 img.x0<x0 and img.y0<y0 and img.x1>x1 and img.y1>y1):
-                            processImage(Image.open(BytesIO(img.stream.get_rawdata())), pr)
+                            filters = img.stream.get_filters()
+                            if len(filters)>0 and filters[0][0].name == "DCTDecode":
+                                pImage = Image.open(BytesIO(img.stream.get_rawdata()))
+                            elif img.bits == 8 and img.colorspace[0].name == "DeviceRGB":
+                                pImage = Image.frombuffer("RGB", img.srcsize, img.stream.get_data(), "raw", "RGB", 0, 1)
+                            else:
+                                errWrite("%s: image with unknown format found, skipping\n" % pr["filename"])
+                                continue
+                            processImage(pImage, pr)
                             foundImages = True
             if not foundImages:
                 # Подходящих картинок нет, используем fallback метод
