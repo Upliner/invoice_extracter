@@ -2,6 +2,8 @@
 # -*- coding: utf-8
 from pyparsing import *
 
+ParserElement.setDefaultWhitespaceChars(u" \t\n\r\u00a0")
+
 def makeList(lst):
     return Or([CaselessKeyword(v) for v in lst])
 
@@ -216,3 +218,4 @@ if __name__ == '__main__':
     test(5.02, u"Пять рублей две копейки")
     test(0.11, u"Ноль рублей одиннадцать копеек")
     test(4658, u"Четыре тысячи шестьсот пятьдесят восемь  руб. 00 коп.")
+    test(8460, u"Восемь тысяч четыреста шестьдесят рублей 00 копеек")

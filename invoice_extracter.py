@@ -162,7 +162,7 @@ def fillTotal(pr, val):
 
 # Функции по поиску и обработке строк с данными по НДС
 def checkWithoutVat(pr, text):
-    rr = re.search(ur"(Сумма|Цена|Итого|Всего)?\s*? *Без *(налога)? *\(?НДС", text, drp)
+    rr = re.search(ur"(Сумма|Цена|Итого|Всего)?\s*?\s*Без\s*(налога)?\s*\(?НДС", text, drp)
     if (rr != None and rr.group(1) == None) or u"НДС не облагается" in text:
         fillField(pr, u"СтавкаНДС", u"БезНДС")
         fillField(pr, u"СуммаНДС", 0)
@@ -174,12 +174,12 @@ def fillVatType(pr, content):
         fillField(pr, u"СтавкаНДС", u"0%")
         fillField(pr, u"СуммаНДС", 0)
 
-vatIntro = ur"(?:Всего|Итого|Сумма|в т\. ?ч\.|в том числе|включая) *НДС"
+vatIntro = ur"(?:Всего|Итого|Сумма|в\sт\.\s?ч\.|в\sтом\sчисле|включая)\s*НДС"
 
 def checkVatAmount(pr, text):
     for r in re.finditer(vatIntro +                                                      # Вводные слова
-             ur" *(?:по ставке)? *\(?([0-9%]*)?(?:[^0-9\n]*)?\s*"                        # Ставка НДС
-             ur"(?:([0-9\.,\s]*) *(?:руб(?:лей)?\.? *([0-9][0-9]?) *коп(?:еек)?\.?)?)?", # Сумма НДС
+             ur"\s*(?:по\sставке)?\s*\(?([0-9%]*)?(?:[^0-9\n]*)?\s*"                        # Ставка НДС
+             ur"(?:([0-9\.,\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
         if r.group(1) != None: fillVatType(pr, r.group(1)) # group 1: ставка НДС
         vat = None
@@ -277,12 +277,12 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         # В данной ячейке данных не найдено, проверяем ячейки/текстбоксы справа
         return getValueToTheRight(firstCell)[0]
 
-    rm = re.match(ur"ИНН */ *КПП\b[: ]*(.*)", content, drp)
+    rm = re.match(ur"ИНН\s*/\s*КПП\b[:\s]*(.*)", content, drp)
     if rm:
         val = rm.group(1).strip()
         if len(val) == 0: val = getValueToTheRight(firstCell)[0]
         if val == None: return
-        rm = re.match(r"([0-9]{10}) */? *([0-9]{9})\b", val, drp)
+        rm = re.match(r"([0-9]{10})\s*/?\s*([0-9]{9})\b", val, drp)
         if rm == None:
             rm = re.match(r"([0-9]{12})\b", val, drp)
             if rm == None: return
@@ -304,7 +304,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             fillField(pr, fld, val)
             return
 
-    rr = re.search(ur"Сч[её]т\s*(на оплату|№|.*? от [0-9][0-9]?[\. ])", content, drp)
+    rr = re.search(ur"Сч[её]т\s*(на\sоплату|№|.*?\bот\s[0-9][0-9]?[\.\s]|$)", content, drp)
     if rr:
         text = content[rr.start(0):]
         val, cell = getValueToTheRight(firstCell)
@@ -317,7 +317,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
 
     if u" рубл" in content: findSumsInWords(content, pr)
     if (re.match(u"Итого|Всего|Сумма", content, drp) and
-            (re.search(u"(с|без) *НДС", content, drp) or not u"НДС" in content)):
+            (re.search(u"(с|без)\s*НДС", content, drp) or not u"НДС" in content)):
         if ":" in content: val = getSecondValue(":")
         else: val = getValueToTheRight(firstCell)[0]
         if val == None: return
@@ -377,7 +377,7 @@ def processText(text, pr):
         for val in re.finditer("\\b" + fld + u"\\n? *(%s)\\b" % regexp, text, drp):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
-    rr = re.search(ur"^ *Сч[её]т\s*(на оплату|№|.*?\bот *[0-9]).*", text, drp | re.MULTILINE)
+    rr = re.search(ur"^ *Сч[её]т\s*(на оплату|№|.*?\bот\s*[0-9]).*", text, drp | re.MULTILINE)
     if rr: fillField(pr, u"Счет", stripInvoiceNumber(rr.group(0).strip("")))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
