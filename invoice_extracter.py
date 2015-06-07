@@ -436,13 +436,13 @@ def processImage(image, pr):
                 f.write(text.encode("utf-8"))
         processText(text, pr)
     doProcess()
-    if hasIncompleteFields(pr) and image.size[0]*image.size[1] < 5000000:
+    if hasIncompleteFields(pr) and image.size[0]*image.size[1] < 8000000:
         for fld in pr.keys():
             if fld != "filename": del pr[fld]
         if args.verbose:
             errWrite(u"Не удалось распознать изображение, повтор с более высоким разрешением\n")
-        multiplier = 3
-        image = image.resize(tuple([i * multiplier for i in image.size]), Image.BICUBIC)
+        multiplier = (8000000.0/image.size[0]/image.size[1]) ** 0.5
+        image = image.resize(tuple([int(i * multiplier) for i in image.size]), Image.BICUBIC)
         if debug: image.save("invext-debug.png", "PNG")
         doProcess()
 
