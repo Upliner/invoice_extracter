@@ -146,8 +146,8 @@ def parseNumber(s):
 arrRub = [u"рубль", u"рубля", u"рублей"]
 arrKop = [u"копейка", u"копейки", u"копеек"]
 
-rub = Or([CaselessLiteral(v) for v in arrRub + [u"руб"]])
-kop = Or([CaselessLiteral(v) for v in arrRub + [u"коп"]])
+rub = Or([CaselessLiteral(v) for v in arrRub + [u"руб", u"руб."]])
+kop = Or([CaselessLiteral(v) for v in arrRub + [u"коп", u"коп."]])
 
 sumParse = Group(number) + rub + (Word(srange("[0-9]"), None, 1,2) | Group(lessHundredFem) | zero) + kop
 
@@ -215,3 +215,4 @@ if __name__ == '__main__':
     test(2.00, u"Два рубля ноль копеек")
     test(5.02, u"Пять рублей две копейки")
     test(0.11, u"Ноль рублей одиннадцать копеек")
+    test(4658, u"Четыре тысячи шестьсот пятьдесят восемь  руб. 00 коп.")

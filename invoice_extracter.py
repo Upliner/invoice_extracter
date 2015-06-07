@@ -68,12 +68,11 @@ drp = re.UNICODE | re.IGNORECASE # default regexp parameters
 
 # Алгоритм работы:
 # В первом проходе ищем надписи ИНН, КПП, БИК и переносим числа, следующие за ними в
-# соответствующие поля. 
+# соответствующие поля.
 # Если не в первом проходе не найдены ИНН, КПП или БИК, тогда запускаем второй проход:
 # Первое десятизначное число интерпретируем как ИНН, первое девятизначное с первыми четырьмя 
 # цифрами, совпадающими с ИНН - как КПП, первое девятизначное, начинающиеся с 04 -- как БИК
 #
-
 
 class Err:
     def __repr__():
@@ -86,11 +85,10 @@ def epsilonEquals(a,b):
     return test < 0.0001
 
 def parse(num):
-    num = re.sub(ur"руб(лей)?\.?| ","", num).strip(",. \n")
+    num = re.sub(ur"руб(лей)?\.?|\s|\u00a0", "", num, drp).strip(",. \n")
+    num = re.sub("[,\.]([0-9]{3})", r"\1", num) # Удаляем точки и запятые, отделяющие тысячи
     if (re.search(",[0-9][0-9]?$", num)): # Если число оканчивается на ",00", тогда считаем, что запятая отделяет десятичные знаки
         num = num.replace(",", ".")
-    else:
-        num = num.replace(",", "") # Иначе считаем, что запятая отделяет тысячи -- удаляем их
     try:
        return float(num)
     except ValueError:
@@ -148,9 +146,16 @@ def fillTotal(pr, val):
     if epsilonEquals(val, pr.get(u"ИтогоСНДС")): return
     oldTotal = pr.get(u"Итого")
     if oldTotal != None:
-        if oldTotal != val:
-            fillField(pr, u"ИтогоБезНДС", min(val, oldTotal))
-            fillField(pr, u"ИтогоСНДС", max(val, oldTotal))
+        if oldTotal == val or isinstance(oldTotal, Err): return
+        withoutVat = min(val, oldTotal)
+        withVat = min(val, oldTotal)
+        if abs(withVat/1.18-withoutVat)>0.1:
+            if args.verbose:
+                errWrite(u"%s: Найдено несколько различных числовых сумм Итого, полагаемся только на сумму прописью\n" % (pr["filename"]))
+            pr[u"Итого"] = Err()
+        else:
+            fillField(pr, u"ИтогоБезНДС", withoutVat)
+            fillField(pr, u"ИтогоСНДС", withVat)
             del pr[u"Итого"]
     else:
         pr[u"Итого"] = val
@@ -172,9 +177,9 @@ def fillVatType(pr, content):
 vatIntro = ur"(?:Всего|Итого|Сумма|в т\. ?ч\.|в том числе|включая) *НДС"
 
 def checkVatAmount(pr, text):
-    for r in re.finditer(vatIntro +                                                     # Вводное слово
-             ur" *(?:по ставке)? *\(?([0-9%]*)?(?: [^0-9\n]*)? *?\s*"                   # Ставка НДС
-             ur"(?:([0-9\., ]*) *(?:руб(?:лей)?\.? *([0-9][0-9]?) *коп(?:еек)?\.?)?)?", # Сумма НДС
+    for r in re.finditer(vatIntro +                                                      # Вводные слова
+             ur" *(?:по ставке)? *\(?([0-9%]*)?(?:[^0-9\n]*)?\s*"                        # Ставка НДС
+             ur"(?:([0-9\.,\s]*) *(?:руб(?:лей)?\.? *([0-9][0-9]?) *коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
         if r.group(1) != None: fillVatType(pr, r.group(1)) # group 1: ставка НДС
         vat = None
@@ -299,8 +304,9 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             fillField(pr, fld, val)
             return
 
-    if re.match(ur"Сч[её]т\s*(на оплату|№|.*? от [0-9][0-9]?[\. ])", content, drp):
-        text = content
+    rr = re.search(ur"Сч[её]т\s*(на оплату|№|.*? от [0-9][0-9]?[\. ])", content, drp)
+    if rr:
+        text = content[rr.start(0):]
         val, cell = getValueToTheRight(firstCell)
         while val != None:
             text += " "
@@ -412,7 +418,7 @@ def processText(text, pr):
             fillField(pr, u"КПП", val)
 
     # Ищем итоги, ставки и суммы НДС
-    for r in re.finditer(ur"Итого( [а-яА-ЯёЁ ]*)?:?\s*([0-9\., ]*)", text, drp):
+    for r in re.finditer(ur"Итого( [а-яА-ЯёЁ ]*)?:?\s*([0-9\.,\s]*)", text, drp):
         if r.group(1) == None or (re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
             fillTotal(pr, parse(r.group(2).strip(".,")))
 
