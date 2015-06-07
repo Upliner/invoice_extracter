@@ -12,6 +12,7 @@ from pytesseract import image_to_string
 from PIL import Image
 from io import BytesIO
 from mylingv import searchSums
+from xml.sax.saxutils import unescape
 
 parser = argparse.ArgumentParser(description='Extract data from invoices.')
 
@@ -172,7 +173,7 @@ vatIntro = ur"(?:Всего|Итого|Сумма|в т\. ?ч\.|в том чис
 
 def checkVatAmount(pr, text):
     for r in re.finditer(vatIntro +                                                     # Вводное слово
-             ur"НДС *(?:по ставке)? *\(?([0-9%]*)?(?: [а-яА-ЯёЁ \)]*)? *[\.:-]?\s*"     # Ставка НДС
+             ur"НДС *(?:по ставке)? *\(?([0-9%]*)?(?: [^0-9\n]*)? *?\s*"                # Ставка НДС
              ur"(?:([0-9\., ]*) *(?:руб(?:лей)?\.? *([0-9][0-9]?) *коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
         if r.group(1) != None: fillVatType(pr, r.group(1)) # group 1: ставка НДС
@@ -366,7 +367,7 @@ def processText(text, pr):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
     rr = re.search(ur"^ *Сч[её]т\s*(на оплату|№|.*?\bот *[0-9]).*", text, drp | re.MULTILINE)
-    if rr: fillField(pr, u"Счет", stripInvoiceNumber(rr.group(0)))
+    if rr: fillField(pr, u"Счет", stripInvoiceNumber(rr.group(0).strip("")))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
     if u"ИНН" not in pr and u"КПП" not in pr:
@@ -424,12 +425,12 @@ def processImage(image, pr):
                 f.write(text.encode("utf-8"))
         processText(text, pr)
     doProcess()
-    if len(pr)<3 and image.size[0]<1500:
+    if len(pr)<3 and image.size[0]*image.size[1] < 5000000:
         for fld in pr.keys():
             if fld != "filename": del pr[fld]
         if args.verbose:
-            errWrite("Не удалось распознать изображение, повтор с более высоким разрешением\n")
-        multiplier = int(math.ceil(1500.0/image.size[0]))
+            errWrite(u"Не удалось распознать изображение, повтор с более высоким разрешением\n")
+        multiplier = 3
         image = image.resize(tuple([i * multiplier for i in image.size]), Image.BICUBIC)
         if debug: image.save("invext-debug.png", "PNG")
         doProcess()
@@ -495,14 +496,15 @@ def processExcel(filename, pr):
 def processMsWord(filename, pr):
     debug = False
     sp = subprocess.Popen(["antiword", "-x", "db", filename], stdout=subprocess.PIPE, stderr=sys.stderr)
-    stdoutdata, stderrdata = sp.communicate()
+    docdata, stderrdata = sp.communicate()
+    docdata = unescape(re.sub(r"</?[^>]+>", "\n", docdata))
     if sp.poll() != 0:
         errWrite("%s: Call to antiword failed, errcode is %i\n" % (filename, sp.poll()))
         return
     if debug:
-        with open("invext-debug.xml","w") as f:
-            f.write(stdoutdata)
-    processText(stdoutdata.decode("utf-8"), pr)
+        with open("invext-debug.txt","w") as f:
+            f.write(docdata)
+    processText(docdata.decode("utf-8"), pr)
 
 def getBicData(bic):
     url = "http://www.bik-info.ru/bik_%s.html" % bic
@@ -616,7 +618,7 @@ def finalizeAndCheck(pr):
         bicData = getBicData(pr[u"БИК"])
         if bicData:
             if bicData[u"Корсчет"] != pr.get(u"Корсчет", ""):
-                if pr[u"Корсчет"] == our.get(u"Корсчет"):
+                if u"Корсчет" in pr and pr[u"Корсчет"] == our.get(u"Корсчет"):
                     if args.verbose: errWrite(u"%s: Настоящий корсчёт не распознался: в файле %s, в базе %s\n" % (
                         pr["filename"], pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
                     # Распознался наш корсчёт, настоящий корсчёт не распознался, либо его нет
