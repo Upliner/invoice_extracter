@@ -342,7 +342,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
     findBankAccounts(content, pr)
 
 def hasIncompleteFields(pr):
-    if "ИтогоСНДС" not in pr and "Итого" not in pr: return True
+    if u"ИтогоСНДС" not in pr and u"Итого" not in pr: return True
     for i in [u"р/с", u"ИНН", u"КПП", u"БИК", u"Счет", u"СуммаНДС"]:
         if i not in pr: return True
     return False
@@ -436,7 +436,7 @@ def processImage(image, pr):
                 f.write(text.encode("utf-8"))
         processText(text, pr)
     doProcess()
-    if len(pr)<3 and image.size[0]*image.size[1] < 5000000:
+    if hasIncompleteFields(pr) and image.size[0]*image.size[1] < 5000000:
         for fld in pr.keys():
             if fld != "filename": del pr[fld]
         if args.verbose:
