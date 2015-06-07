@@ -86,9 +86,8 @@ def epsilonEquals(a,b):
 
 def parse(num):
     num = re.sub(ur"руб(лей)?\.?|\s|\u00a0", "", num, drp).strip(",. \n")
-    num = re.sub("[,\.]([0-9]{3})", r"\1", num) # Удаляем точки и запятые, отделяющие тысячи
-    if (re.search(",[0-9][0-9]?$", num)): # Если число оканчивается на ",00", тогда считаем, что запятая отделяет десятичные знаки
-        num = num.replace(",", ".")
+    num = re.sub("[',\.]([0-9]{3})", r"\1", num)      # Удаляем точки, запятые и апострофы, отделяющие тысячи
+    num = re.sub("[,\-]([0-9][0-9])?$", r".\1", num) # Заменяем запятую и дефис, отделяющие десятичные знаки, на точку
     try:
        return float(num)
     except ValueError:
@@ -177,9 +176,9 @@ def fillVatType(pr, content):
 vatIntro = ur"(?:Всего|Итого|Сумма|в\sт\.\s?ч\.|в\sтом\sчисле|включая)\s*НДС"
 
 def checkVatAmount(pr, text):
-    for r in re.finditer(vatIntro +                                                         # Вводные слова
-             ur"\s*(?:по\sставке)?\s*\(?([0-9]*%)?([^0-9\n]*)?\s*"                          # Ставка НДС
-             ur"(?:([0-9\.,\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?", # Сумма НДС
+    for r in re.finditer(vatIntro +                                                           # Вводные слова
+             ur"\s*(?:по\sставке)?\s*\(?([0-9]*%)?([^0-9\n]*)?\s*"                            # Ставка НДС
+             ur"(?:([0-9\.,'\-\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
 
         if r.group(1) != None: fillVatType(pr, r.group(1)) # group 1: ставка НДС
@@ -362,10 +361,13 @@ def findSumsInWords(text, pr):
            del pr[u"Итого"]
         elif epsilonEquals(psum, pr.get(u"СуммаНДС")):
             continue
+
+        # Определяем случаи, когда прописью написана суммма НДС
         oldValue = pr.get(u"ИтогоСНДС")
         if oldValue != None and oldValue > 1 and abs(oldValue/1.18*0.18-psum)<0.05:
             fillField(pr, u"СуммаНДС", psum)
             continue
+
         fillField(pr, u"ИтогоСНДС", psum)
         pr[u"СуммаПрописью"] = True
 
@@ -431,7 +433,7 @@ def processText(text, pr):
             fillField(pr, u"КПП", val)
 
     # Ищем итоги, ставки и суммы НДС
-    for r in re.finditer(ur"Итого( [а-яА-ЯёЁ ]*)?:?\s*([0-9\.,\s]*)", text, drp):
+    for r in re.finditer(ur"Итого( [а-яА-ЯёЁ ]*)?:?\s*([0-9'\-\.,\s]*)", text, drp):
         if r.group(1) == None or (re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
             fillTotal(pr, parse(r.group(2).strip(".,")))
 
