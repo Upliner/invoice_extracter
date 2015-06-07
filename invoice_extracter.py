@@ -169,11 +169,11 @@ def fillVatType(pr, content):
         fillField(pr, u"СтавкаНДС", u"0%")
         fillField(pr, u"СуммаНДС", 0)
 
-vatIntro = ur"(?:Всего|Итого|Сумма|в т\. ?ч\.|в том числе|включая) *"
+vatIntro = ur"(?:Всего|Итого|Сумма|в т\. ?ч\.|в том числе|включая) *НДС"
 
 def checkVatAmount(pr, text):
     for r in re.finditer(vatIntro +                                                     # Вводное слово
-             ur"НДС *(?:по ставке)? *\(?([0-9%]*)?(?: [^0-9\n]*)? *?\s*"                # Ставка НДС
+             ur" *(?:по ставке)? *\(?([0-9%]*)?(?: [^0-9\n]*)? *?\s*"                   # Ставка НДС
              ur"(?:([0-9\., ]*) *(?:руб(?:лей)?\.? *([0-9][0-9]?) *коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
         if r.group(1) != None: fillVatType(pr, r.group(1)) # group 1: ставка НДС
@@ -310,7 +310,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         return
 
     if u" рубл" in content: findSumsInWords(content, pr)
-    if (re.match(u"Итого|Всего", content, drp) and
+    if (re.match(u"Итого|Всего|Сумма", content, drp) and
             (re.search(u"(с|без) *НДС", content, drp) or not u"НДС" in content)):
         if ":" in content: val = getSecondValue(":")
         else: val = getValueToTheRight(firstCell)[0]
