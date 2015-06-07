@@ -30,11 +30,14 @@ parser.add_argument("--coracc", type=str, default = None, help="specify bank tra
 
 args = parser.parse_args()
 
+def errWrite(s):
+    sys.stderr.write(s.encode("utf-8"))
+
 # Принимаем реквизиты из файла, коммандной строки или берём по умолчанию
 
 if args.inn or args.kpp or args.acc or args.bic or args.coracc:
     if args.reqfile != None:
-        sys.stderr.write(u"Ошибка: одновременно заданы реквизиты в файле и в коммандной строке\n")
+        errWrite(u"Ошибка: одновременно заданы реквизиты в файле и в коммандной строке\n")
         sys.exit(1)
     our = {}
     for a, o in [("inn", u"ИНН"), ("kpp", u"КПП"), ("acc", u"р/с"), ("bic", u"БИК"), ("coracc", u"Корсчет")]:
@@ -100,7 +103,7 @@ def checkInn(val):
     # Проверка контрольных цифр
     def innControlDigit(idx):
         if int(val[idx]) != sum(int(i)*c for i,c in zip(val[:idx],innChk[-idx:]))%11%10:
-            if args.verbose: sys.stderr.write(u"Неверная контрольная цифра %i в ИНН: %r\n" % (idx+1, val))
+            if args.verbose: errWrite(u"Неверная контрольная цифра %i в ИНН: %r\n" % (idx+1, val))
             return False
         return True
     if len(val) == 10:
@@ -115,7 +118,7 @@ checkDict = { u"ИНН": checkInn, u"КПП": checkKpp, u"БИК": checkBic, u"�
 
 for fld, check in checkDict.iteritems():
     if fld in our and not check(our[fld]):
-        sys.stderr.write(u"Ошибка: задан некорректный %s нашей организации: %s\n" % (fld, our[fld]))
+        errWrite(u"Ошибка: задан некорректный %s нашей организации: %s\n" % (fld, our[fld]))
         exit(1)
 
 # Заполняет поле с именем fld, проверяет его, и проверяет, чтобы в поле уже не присутствовало другое значение
@@ -129,11 +132,11 @@ def fillField(pr, fld, value):
     if value == ourVal and oldVal != None: return
     check = checkDict.get(fld)
     if check != None and not check(value):
-        if args.verbose: sys.stderr.write(u"%s: Найден некорректный %s: %s\n" % (pr["filename"], fld, value))
+        if args.verbose: errWrite(u"%s: Найден некорректный %s: %s\n" % (pr["filename"], fld, value))
         return
     if oldVal != None and value != ourVal and oldVal != ourVal:
        if fld == u"Счет": return
-       sys.stderr.write(u"%s: Найдено несколько различных %s: %s и %s\n" % (pr["filename"], fld, oldVal, value))
+       errWrite(u"%s: Найдено несколько различных %s: %s и %s\n" % (pr["filename"], fld, oldVal, value))
        pr[fld]=Err()
        return
     pr[fld] = value
@@ -190,12 +193,12 @@ def checkBicAcc(pr):
     fullAcc = prefix + pr[u"р/с"]
     err = u"%s: Некорректный ключ номера счёта: %s\n" % (pr.get("filename", u"Ошибка"), pr[u"р/с"])
     if sum(int(i)*c for i,c in zip(fullAcc, accChk)) % 10 != 0:
-        sys.stderr.write(err)
+        errWrite(err)
         return False
     key = int(fullAcc[11])
     fullAcc = fullAcc[:11] + u"0" + fullAcc[12:]
     if sum(int(i)*c for i,c in zip(fullAcc, accChk)) * 3 % 10 != key:
-        sys.stderr.write(err)
+        errWrite(err)
         return False
     return True
 
@@ -425,7 +428,7 @@ def processImage(image, pr):
         for fld in pr.keys():
             if fld != "filename": del pr[fld]
         if args.verbose:
-            sys.stderr.write("Не удалось распознать изображение, повтор с более высоким разрешением\n")
+            errWrite("Не удалось распознать изображение, повтор с более высоким разрешением\n")
         multiplier = int(math.ceil(1500.0/image.size[0]))
         image = image.resize(tuple([i * multiplier for i in image.size]), Image.BICUBIC)
         if debug: image.save("invext-debug.png", "PNG")
@@ -494,7 +497,7 @@ def processMsWord(filename, pr):
     sp = subprocess.Popen(["antiword", "-x", "db", filename], stdout=subprocess.PIPE, stderr=sys.stderr)
     stdoutdata, stderrdata = sp.communicate()
     if sp.poll() != 0:
-        sys.stderr.write("%s: Call to antiword failed, errcode is %i\n" % (filename, sp.poll()))
+        errWrite("%s: Call to antiword failed, errcode is %i\n" % (filename, sp.poll()))
         return
     if debug:
         with open("invext-debug.xml","w") as f:
@@ -506,7 +509,7 @@ def getBicData(bic):
     try:
         f = urllib2.urlopen(url)
     except urllib2.URLError:
-        sys.stderr.write(u"Ошибка: не удалось загрузить страницу %s\n" % url)
+        errWrite(u"Ошибка: не удалось загрузить страницу %s\n" % url)
         return None
     page = f.read().decode("cp1251")
     f.close()
@@ -517,7 +520,7 @@ def getBicData(bic):
             u"Город": re.search(u"Расположение банка: <b>(.*?)</b>", page).group(1),
         }
     except AttributeError:
-        sys.stderr.write(u"Ошибка: не удалось распознать страницу %s\n" % url)
+        errWrite(u"Ошибка: не удалось распознать страницу %s\n" % url)
         return None
 
 def requestCompanyInfoFedresurs(inn):
@@ -540,17 +543,17 @@ def requestCompanyInfoFedresurs(inn):
         fp.close(); fp = None
         inn2 = re.search(ur"ИНН:</td>\s*<td>([0-9]{10})</td>", page, re.UNICODE).group(1)
         if inn2 != inn:
-            sys.stderr.write(u"Ошибка обращения к сайту fedresurs.ru: ИНН не соответствует запрошенному\n")
+            errWrite(u"Ошибка обращения к сайту fedresurs.ru: ИНН не соответствует запрошенному\n")
             return None
         return {
             u"КПП": re.search(ur"КПП:</td>\s*<td>([0-9]{9})</td>", page, re.UNICODE).group(1),
             u"Наименование": re.search(ur"<td>Сокращённое фирменное наименование:</td>\s*<td>(.*?)</td>", page, re.UNICODE).group(1),
         }
     except urllib2.URLError:
-        sys.stderr.write(u"Ошибка: не удалось загрузить страницу %s\n" % url)
+        errWrite(u"Ошибка: не удалось загрузить страницу %s\n" % url)
         return None
     except AttributeError:
-        sys.stderr.write(u"Ошибка: не удалось распознать страницу %s\n" % url)
+        errWrite(u"Ошибка: не удалось распознать страницу %s\n" % url)
         return None
     finally:
         if fp != None: fp.close()
@@ -560,14 +563,14 @@ def requestCompanyNameIgk(inn):
     try:
         f = urllib2.urlopen(url)
     except urllib2.URLError:
-        sys.stderr.write(u"Ошибка: не удалось загрузить страницу %s\n" % url)
+        errWrite(u"Ошибка: не удалось загрузить страницу %s\n" % url)
         return None
     page = f.read().decode("utf-8")
     f.close()
     try:
         inn2 = re.search(ur"<th>ИНН</th>\s*<td>([0-9]{10}(?:[0-9]{2})?)</td>", page, re.UNICODE).group(1)
         if inn2 != inn:
-            sys.stderr.write(u"Ошибка обращения к сайту igk-group.ru: ИНН не соответствует запрошенному\n")
+            errWrite(u"Ошибка обращения к сайту igk-group.ru: ИНН не соответствует запрошенному\n")
             return None
         if len(inn) == 12:
             return u"ИП " + re.search(ur"<th>Руководство</th>\s*<td>\s*(.*?)\s*</td>", page, re.UNICODE).group(1)
@@ -575,7 +578,7 @@ def requestCompanyNameIgk(inn):
             return re.search(ur"<th>Краткое название</th>\s*<td colspan=\"3\">\s*(.*?)\s*</td>", page, re.UNICODE).group(1)
         else: raise AssertionError("Unchecked INN passed")
     except AttributeError:
-        sys.stderr.write(u"Ошибка: не удалось распознать страницу %s\n" % url)
+        errWrite(u"Ошибка: не удалось распознать страницу %s\n" % url)
         return None
 
 def finalizeDoc(pr):
@@ -598,7 +601,7 @@ def finalizeDoc(pr):
         elif vat != None:
             paydetails += u", в т.ч. НДС"
             if vatRate != None: paydetails += u" (%s)" % vatRate
-            paydetails += u" - " + unicode(pr.get(u"СуммаНДС"))
+            paydetails += u" - %.2f" % pr.get(u"СуммаНДС")
         pr[u"НазначениеПлатежа"] = paydetails
     except AttributeError: pass
     except KeyError: pass
@@ -614,7 +617,7 @@ def finalizeAndCheck(pr):
         if bicData:
             if bicData[u"Корсчет"] != pr.get(u"Корсчет", ""):
                 if pr[u"Корсчет"] == our.get(u"Корсчет"):
-                    if args.verbose: sys.stderr.write(u"%s: Настоящий корсчёт не распознался: в файле %s, в базе %s\n" % (
+                    if args.verbose: errWrite(u"%s: Настоящий корсчёт не распознался: в файле %s, в базе %s\n" % (
                         pr["filename"], pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
                     # Распознался наш корсчёт, настоящий корсчёт не распознался, либо его нет
                     if len(bicData[u"Корсчет"]) == 0:
@@ -622,7 +625,7 @@ def finalizeAndCheck(pr):
                     else:
                         pr[u"Корсчет"] = bicData[u"Корсчет"] # На самом деле корсчёт другой, но он не распознался, возможно из-за OCR
                 else:
-                    sys.stderr.write(u"%s: Ошибка: не совпадает корсчёт: в файле %s, в базе %s\n" % (
+                    errWrite(u"%s: Ошибка: не совпадает корсчёт: в файле %s, в базе %s\n" % (
                         pr["filename"], pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
                     if not args.strict and u"Корсчет" not in pr:
                         pr[u"Корсчет"] = bicData[u"Корсчет"]
@@ -632,7 +635,7 @@ def finalizeAndCheck(pr):
                 pr[u"Банк"] = bicData[u"Наименование"]
                 pr[u"Банк2"] = u"г. " + bicData[u"Город"]
         else:
-            sys.stderr.write(u"%s: Ошибка: не удалось получить данные по БИК %s\n" % (pr["filename"], pr[u"БИК"]))
+            errWrite(u"%s: Ошибка: не удалось получить данные по БИК %s\n" % (pr["filename"], pr[u"БИК"]))
             if args.strict: deleteBank()
 
     if u"ИНН" in pr:
@@ -645,7 +648,7 @@ def finalizeAndCheck(pr):
                 ci = requestCompanyInfoFedresurs(pr[u"ИНН"])
         if ci != None:
             if ci[u"КПП"] != pr.get(u"КПП", u""):
-                sys.stderr.write(u"%s: Ошибка: не совпадает КПП для %s: в файле %s, в базе %s\n" % (
+                errWrite(u"%s: Ошибка: не совпадает КПП для %s: в файле %s, в базе %s\n" % (
                         pr["filename"], ci[u"Наименование"], pr.get(u"КПП", u"пусто"), ci[u"КПП"]))
                 if args.strict: del pr[u"КПП"]
                 elif u"КПП" not in pr: pr[u"КПП"] = ci[u"КПП"]
@@ -654,24 +657,24 @@ def finalizeAndCheck(pr):
             pr[u"Наименование"] = requestCompanyNameIgk(pr[u"ИНН"])
 
     if not pr.get(u"СуммаПрописью"):
-        sys.stderr.write(u"%s: Предупреждение: сумма прописью не найдена\n" % pr["filename"])
+        errWrite(u"%s: Предупреждение: сумма прописью не найдена\n" % pr["filename"])
 
     # Проверяем, чтобы сумма НДС не была слишком большой (это значит, что некорректно подхватилось другое число)
     vat = pr.get(u"СуммаНДС")
     amt = pr.get(u"ИтогоСНДС")
     if vat != None and amt != None:
         if vat>(amt*0.18+0.1):
-            sys.stderr.write(u"%s: Ошибка: некорректная сумма НДС: %r\n" % (pr["filename"], vat))
+            errWrite(u"%s: Ошибка: некорректная сумма НДС: %r\n" % (pr["filename"], vat))
             del pr[u"СуммаНДС"]
 
     finalizeDoc(pr) # Повторно финализируем после прохождения всех проверок
 
 def printMainInvoiceData(pr, fout):
     item = itemTemplate
-    if u"Счет" in pr: fout.write(pr[u"Счет"] + "\n")
-    else: fout.write(u"Номер счёта не найден\n")
+    if u"Счет" in pr: fout.write((pr[u"Счет"] + "\n").encode("utf-8"))
+    else: fout.write(u"Номер счёта не найден\n".encode("utf-8"))
     for fld in [u"ИНН", u"р/с", u"БИК", u"НазначениеПлатежа"]:
-        fout.write(u"%s: %s\n" % (fld, pr.get(fld, u"не найдено")))
+        fout.write((u"%s: %s\n" % (fld, pr.get(fld, u"не найдено"))).encode("utf-8"))
 
 def outputTo1C(pr, fout):
     item = itemTemplate
@@ -739,7 +742,7 @@ try:
         f_, ext = os.path.splitext(f)
         ext = ext.lower()
         pr = { "filename": f} # Parse result
-        sys.stderr.write(f + "\n")
+        errWrite(f + "\n")
         if (ext in ['.png','.bmp','.jpg','.jpeg','.gif']):
             processImage(Image.open(f), pr)
         elif (ext == '.pdf'):
@@ -751,13 +754,13 @@ try:
         elif (ext in ['.txt', '.xml']):
             with open(f, "rb") as f: processText(f.read().decode("utf-8"), pr)
         else:
-            sys.stderr.write("%s: unknown extension\n" % f)
+            errWrite("%s: unknown extension\n" % f)
         if len(pr)>1:
             finalizeDoc(pr)
             printMainInvoiceData(pr, sys.stderr)
             finalizeAndCheck(pr)
             outputTo1C(pr, fout)
-        else: sys.stderr.write("Не распознано\n")
+        else: errWrite(u"Не распознано\n")
         fout.flush()
 finally:
     fout.write(fileFooter.encode("cp1251"))
