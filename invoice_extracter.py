@@ -191,20 +191,25 @@ def checkVatAmount(pr, text):
 
 accChk = [7,1,3]*7+[7,1]
 # Проверка ключа банковского счёта по БИКу и номеру счёта
-def checkBicAcc(pr):
+def checkBicAcc(pr, errs = None):
+    def showError():
+        err = u"Некорректный ключ номера счёта: %s" % pr[u"р/с"]
+        if errs == None: sys.stderr.write("Ошибка: %s\n" % err)
+        else: errs.append(err)
+
     if u"Корсчет" in pr:
        prefix = pr[u"БИК"][6:10]
     else:
        prefix = "0" + pr[u"БИК"][4:6]
     fullAcc = prefix + pr[u"р/с"]
-    err = u"%s: Некорректный ключ номера счёта: %s\n" % (pr.get("filename", u"Ошибка"), pr[u"р/с"])
+
     if sum(int(i)*c for i,c in zip(fullAcc, accChk)) % 10 != 0:
-        errWrite(err)
+        showError()
         return False
     key = int(fullAcc[11])
     fullAcc = fullAcc[:11] + u"0" + fullAcc[12:]
     if sum(int(i)*c for i,c in zip(fullAcc, accChk)) * 3 % 10 != key:
-        errWrite(err)
+        showError()
         return False
     return True
 
@@ -604,52 +609,30 @@ def requestCompanyNameIgk(inn):
         errWrite(u"Ошибка: не удалось распознать страницу %s\n" % url)
         return None
 
-def finalizeDoc(pr):
+def finalizeAndCheck(pr, errs):
     for fld in pr.keys():
         if isinstance(pr[fld], Err): del pr[fld]
     if u"ИтогоСНДС" not in pr and u"Итого" in pr: pr[u"ИтогоСНДС"] = pr[u"Итого"]
-    # Автоматическое определение ставки НДС если явно не указано в документе
-    vat = pr.get(u"СуммаНДС")
-    amt = pr.get(u"ИтогоСНДС")
-    if u"СтавкаНДС" not in pr and amt > 1 and vat and abs(amt/1.18*0.18 - vat)<0.05:
-        pr[u"СтавкаНДС"] = "18%"
-    try:
-        paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"], drp).group(1)
-        if u"ИтогоСНДС" in pr:
-            paydetails += u" Сумма %.2f" % pr[u"ИтогоСНДС"]
-        vatRate = pr.get(u"СтавкаНДС")
-        vat = pr.get(u"СуммаНДС")
-        if vatRate == u"БезНДС" or vat == 0:
-            paydetails += u", НДС не облагается"
-        elif vat != None:
-            paydetails += u", в т.ч. НДС"
-            if vatRate != None: paydetails += u" (%s)" % vatRate
-            paydetails += u" - %.2f" % pr.get(u"СуммаНДС")
-        pr[u"НазначениеПлатежа"] = paydetails
-    except AttributeError: pass
-    except KeyError: pass
-
-def finalizeAndCheck(pr):
     def deleteBank():
         for fld in [u"БИК", u"Корсчет", u"р/c"]:
             if fld in pr: del pr[fld]
-    if u"р/с" in pr and "БИК" in pr and not checkBicAcc(pr):
+    if u"р/с" in pr and "БИК" in pr and not checkBicAcc(pr, errs):
         deleteBank()
     if u"БИК" in pr:
         bicData = getBicData(pr[u"БИК"])
         if bicData:
             if bicData[u"Корсчет"] != pr.get(u"Корсчет", ""):
                 if u"Корсчет" in pr and pr[u"Корсчет"] == our.get(u"Корсчет"):
-                    if args.verbose: errWrite(u"%s: Настоящий корсчёт не распознался: в файле %s, в базе %s\n" % (
-                        pr["filename"], pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
+                    if args.verbose: errs.append(u"Настоящий корсчёт не распознался: в файле %s, в базе %s" % (
+                        pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
                     # Распознался наш корсчёт, настоящий корсчёт не распознался, либо его нет
                     if len(bicData[u"Корсчет"]) == 0:
                         del pr[u"Корсчет"] # На самом деле корсчёта быть не должно
                     else:
                         pr[u"Корсчет"] = bicData[u"Корсчет"] # На самом деле корсчёт другой, но он не распознался, возможно из-за OCR
                 else:
-                    errWrite(u"%s: Ошибка: не совпадает корсчёт: в файле %s, в базе %s\n" % (
-                        pr["filename"], pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
+                    errs.append(u"Ошибка: не совпадает корсчёт: в файле %s, в базе %s" % (
+                        pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
                     if not args.strict and u"Корсчет" not in pr:
                         pr[u"Корсчет"] = bicData[u"Корсчет"]
                     else:
@@ -658,7 +641,7 @@ def finalizeAndCheck(pr):
                 pr[u"Банк"] = bicData[u"Наименование"]
                 pr[u"Банк2"] = u"г. " + bicData[u"Город"]
         else:
-            errWrite(u"%s: Ошибка: не удалось получить данные по БИК %s\n" % (pr["filename"], pr[u"БИК"]))
+            errs.append(u"Ошибка: не удалось получить данные по БИК %s" % pr[u"БИК"])
             if args.strict: deleteBank()
 
     if u"ИНН" in pr:
@@ -671,8 +654,8 @@ def finalizeAndCheck(pr):
                 ci = requestCompanyInfoFedresurs(pr[u"ИНН"])
         if ci != None:
             if ci[u"КПП"] != pr.get(u"КПП", u""):
-                errWrite(u"%s: Не совпадает КПП для %s: в файле %s, в базе %s\n" % (
-                        pr["filename"], ci[u"Наименование"], pr.get(u"КПП", u"пусто"), ci[u"КПП"]))
+                errs.append(u"Не совпадает КПП для %s: в файле %s, в базе %s" % (
+                        ci[u"Наименование"], pr.get(u"КПП", u"пусто"), ci[u"КПП"]))
                 if args.strict: del pr[u"КПП"]
                 elif u"КПП" not in pr: pr[u"КПП"] = ci[u"КПП"]
             pr[u"Наименование"] = ci[u"Наименование"]
@@ -680,17 +663,44 @@ def finalizeAndCheck(pr):
             pr[u"Наименование"] = requestCompanyNameIgk(pr[u"ИНН"])
 
     if not pr.get(u"СуммаПрописью"):
-        errWrite(u"%s: Предупреждение: сумма прописью не найдена\n" % pr["filename"])
+        errs.append(u"Предупреждение: сумма прописью не найдена")
 
     # Проверяем, чтобы сумма НДС не была слишком большой (это значит, что некорректно подхватилось другое число)
-    vat = pr.get(u"СуммаНДС")
     amt = pr.get(u"ИтогоСНДС")
+    vat = pr.get(u"СуммаНДС")
     if vat != None and amt != None:
         if vat>(amt*0.18+0.1):
-            errWrite(u"%s: Ошибка: некорректная сумма НДС: %r\n" % (pr["filename"], vat))
+            errs.append(u"%s: Ошибка: некорректная сумма НДС: %r\n" % (pr["filename"], vat))
             del pr[u"СуммаНДС"]
 
-    finalizeDoc(pr) # Повторно финализируем после прохождения всех проверок
+    # Автоматическое определение ставки НДС если явно не указано в документе
+    vatMatch = amt > 1 and vat and abs(amt/1.18*0.18 - vat)<0.05
+    if u"СтавкаНДС" not in pr and vatMatch:
+        pr[u"СтавкаНДС"] = "18%"
+
+    # При сумме больше 100 тысяч выводим сумму только если есть сумма прописью либо соответствующий НДС
+    if amt > 100000 and not vatMatch and not pr.get("СуммаПрописью", False):
+        del pr[u"ИтогоСНДС"]
+
+    # Генерируем назначение платежа
+    try:
+        paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"], drp).group(1)
+    except KeyError: paydetails = "Номер счета неизвестен."
+    except AttributeError:
+         # Не удалось поставить слово "Счёт" в родительный падеж, записываем как есть
+        paydetails = "Оплата по " + pr[u"Счет"]
+
+    if u"ИтогоСНДС" in pr:
+        paydetails += u" Сумма %.2f" % pr[u"ИтогоСНДС"]
+    vatRate = pr.get(u"СтавкаНДС")
+    vat = pr.get(u"СуммаНДС")
+    if vatRate == u"БезНДС" or vat == 0:
+        paydetails += u", НДС не облагается"
+    elif vat != None:
+        paydetails += u", в т.ч. НДС"
+        if vatRate != None: paydetails += u" (%s)" % vatRate
+        paydetails += u" - %.2f" % pr.get(u"СуммаНДС")
+    pr[u"НазначениеПлатежа"] = paydetails
 
 def printMainInvoiceData(pr, fout):
     item = itemTemplate
@@ -769,19 +779,22 @@ try:
         if (ext in ['.png','.bmp','.jpg','.jpeg','.gif']):
             processImage(Image.open(f), pr)
         elif (ext == '.pdf'):
-            with open(f, "rb") as f: processPDF(f, pr)
+            with open(f, "rb") as ff: processPDF(ff, pr)
         elif (ext in ['.xls', '.xlsx']):
             processExcel(f, pr)
         elif (ext in ['.doc']):
             processMsWord(f, pr)
         elif (ext in ['.txt', '.xml']):
-            with open(f, "rb") as f: processText(f.read().decode("utf-8"), pr)
+            with open(f, "rb") as ff: processText(ff.read().decode("utf-8"), pr)
         else:
             errWrite("%s: unknown extension\n" % f)
         if len(pr)>1:
-            finalizeDoc(pr)
-            printMainInvoiceData(pr, sys.stderr)
-            finalizeAndCheck(pr)
+            errs = []
+            try:
+                finalizeAndCheck(pr, errs)
+                printMainInvoiceData(pr, sys.stderr)
+            finally:
+                for err in errs: errWrite("%s: %s\n" % (f, err))
             outputTo1C(pr, fout)
         else: errWrite(u"Не распознано\n")
         fout.flush()
