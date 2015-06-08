@@ -86,8 +86,8 @@ def epsilonEquals(a,b):
 
 def parse(num):
     num = re.sub(ur"руб(лей)?\.?|\s|\u00a0", "", num, drp).strip(",. \n")
-    num = re.sub("[',\.]([0-9]{3})", r"\1", num)      # Удаляем точки, запятые и апострофы, отделяющие тысячи
-    num = re.sub("[,\-]([0-9][0-9])?$", r".\1", num) # Заменяем запятую и дефис, отделяющие десятичные знаки, на точку
+    num = re.sub("[',\.]([0-9]{3})", r"\1", num)     # Удаляем точки, запятые и апострофы, отделяющие тысячи
+    num = re.sub("[,\-]([0-9][0-9]?)$", r".\1", num) # Заменяем запятую и дефис, отделяющие десятичные знаки, на точку
     try:
        return float(num)
     except ValueError:
@@ -437,8 +437,8 @@ def processText(text, pr):
         if r.group(1) == None or (re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
             fillTotal(pr, parse(r.group(2).strip(".,")))
 
-    checkWithoutVat(pr, text)
-    checkVatAmount(pr, text)
+    if u"СуммаНДС"  not in pr: checkVatAmount(pr, text)
+    if u"СтавкаНДС" not in pr: checkWithoutVat(pr, text)
 
     findSumsInWords(text, pr)
 
