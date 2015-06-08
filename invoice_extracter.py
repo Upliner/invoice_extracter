@@ -692,16 +692,16 @@ def finalizeAndCheck(pr, errs):
         pr[u"СтавкаНДС"] = "18%"
 
     # При сумме больше 100 тысяч выводим сумму только если есть сумма прописью либо соответствующий НДС
-    if amt > 100000 and not vatMatch and not pr.get("СуммаПрописью", False):
+    if amt > 100000 and not vatMatch and not pr.get(u"СуммаПрописью", False):
         del pr[u"ИтогоСНДС"]
 
     # Генерируем назначение платежа
     try:
         paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"], drp).group(1)
-    except KeyError: paydetails = "Номер счета неизвестен."
+    except KeyError: paydetails = u"Номер счета неизвестен."
     except AttributeError:
          # Не удалось поставить слово "Счёт" в родительный падеж, записываем как есть
-        paydetails = "Оплата по " + pr[u"Счет"]
+        paydetails = u"Оплата по " + pr[u"Счет"]
 
     if u"ИтогоСНДС" in pr:
         paydetails += u" Сумма %.2f" % pr[u"ИтогоСНДС"]
