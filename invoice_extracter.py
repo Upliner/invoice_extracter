@@ -145,7 +145,12 @@ def fillTotal(pr, val):
     if epsilonEquals(val, pr.get(u"ИтогоСНДС")): return
     oldTotal = pr.get(u"Итого")
     if oldTotal != None:
-        if oldTotal == val or isinstance(oldTotal, Err): return
+        if oldTotal == val: return
+        if pr.get(u"СтавкаНДС") in [u"БезНДС", u"0%"]:
+            errWrite(u"%s: Ошибка: найдено несколько итоговых сумм и слова \"Без НДС\"\n" % (pr["filename"]))
+            pr[u"СтавкаНДС"] = Err()
+            pr[u"СуммаНДС"] = Err()
+        if isinstance(oldTotal, Err): return
         withoutVat = min(val, oldTotal)
         withVat = min(val, oldTotal)
         if abs(withVat/1.18-withoutVat)>0.1:
@@ -161,7 +166,7 @@ def fillTotal(pr, val):
 
 # Функции по поиску и обработке строк с данными по НДС
 def checkWithoutVat(pr, text):
-    rr = re.search(ur"(Сумма|Цена|Итого|Всего)?\s*?\s*Без\s*(налога)?\s*\(?НДС", text, drp)
+    rr = re.search(ur"(Сумма|Цена|Итого|Всего)?.*?Без\s*(налога)?\s*\(?НДС", text, drp)
     if (rr != None and rr.group(1) == None) or u"НДС не облагается" in text:
         fillField(pr, u"СтавкаНДС", u"БезНДС")
         fillField(pr, u"СуммаНДС", 0)
@@ -173,24 +178,29 @@ def fillVatType(pr, content):
         fillField(pr, u"СтавкаНДС", u"0%")
         fillField(pr, u"СуммаНДС", 0)
 
-vatIntro = ur"(?:Всего|Итого|Сумма|в\sт\.\s?ч\.|в\sтом\sчисле|включая)\s*НДС"
+vatIntro = ur"(Всего|Итого|Сумма|в\sт\.\s?ч\.|в\sтом\sчисле|включая)?\s*НДС"
 
-def checkVatAmount(pr, text):
-    for r in re.finditer(vatIntro +                                                           # Вводные слова
-             ur"\s*(?:по\sставке)?\s*\(?([0-9]*%)?([^0-9\n]*)?\s*"                            # Ставка НДС
+def checkVatAmount(pr, text, allowNewlines = False):
+    for r in re.finditer(vatIntro +                                                            # Вводные слова
+             ur"\s*(?:по\sставке)?\s*\(?([0-9]*%)?([^0-9\n]*)?(\s*)"                           # Ставка НДС
              ur"(?:([0-9\.,'\-\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
 
-        if r.group(1) != None: fillVatType(pr, r.group(1)) # group 1: ставка НДС
-        if r.group(2) != None and u"рубл" in r.group(2):
+        if r.group(1) == None and r.group(2) == None: continue # Если нет вводного слова и ставки -- пропускаем
+        if r.group(2) != None: fillVatType(pr, r.group(2)) # group 2: ставка НДС
+        if r.group(3) != None and u"рубл" in r.group(3):   # group 3: произвольные слова
             continue # Игнорировать сумму НДС прописью, она обрабатывается в другом месте
 
+        if not allowNewlines and u"\n" in r.group(4): continue # group 4: whitespace
+
         vat = None
-        if r.group(3) != None:  # group 3: Сумма НДС
-            vat = parse(r.group(3))
-        if r.group(4) != None:  # group 4: Копейки в сумме НДС
-            vat += float(r.group(4))/100
-        if vat != None: fillField(pr, u"СуммаНДС", vat)
+        if r.group(5) != None:  # group 5: Сумма НДС
+            vat = parse(r.group(5))
+        if r.group(6) != None:  # group 6: Копейки в сумме НДС
+            vat += float(r.group(6))/100
+
+        if vat != None and (r.group(1) != None or (r.group(2) != None and pr.get(u"СтавкаНДС") == "18%")):
+            fillField(pr, u"СуммаНДС", vat)
 
 accChk = [7,1,3]*7+[7,1]
 # Проверка ключа банковского счёта по БИКу и номеру счёта
@@ -222,7 +232,7 @@ if u"БИК" in our and u"р/с" in our and u"Корсчет" in our:
 
 # Убрать лишние данные из номера счёта
 def stripInvoiceNumber(num):
-    m = re.search(ur"\bот:? *[0-3]?\d(\.[0-1]\d\.| *[а-яА-Я]* )(20)?\d\d( *г([г\.]|ода?)?)?", num, drp)
+    m = re.search(ur"\b(от|дата):? *[0-3]?\d(\.[0-1]\d\.| *[а-яА-Я]* )(20)?\d\d( *г([г\.]|ода?)?)?", num, drp)
     if m: return num[0:m.end()]
     return num
 
@@ -274,6 +284,9 @@ def processPdfLine(pdf, pl, pr):
         return (pdfLine.get_text(), pdfLine)
     processCellContent(content, getValueToTheRight, pl, pr)
 
+# Шаблон для поиска номера счёта
+inv_base = ur"Сч[её]т\s*(на\sоплату|№|N|.*?\bот\s[0-9][0-9]?[\.\s]|.*?\bДата [0-9]{2}.[0-9]{2}.[0-9]{2}[0-9]{2}?"
+
 def processCellContent(content, getValueToTheRight, firstCell, pr):
     def getSecondValue(separator = None):
         # Значение может находиться как в текущей ячейке, так и в следующей
@@ -312,7 +325,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             fillField(pr, fld, val)
             return
 
-    rr = re.search(ur"Сч[её]т\s*(на\sоплату|№|.*?\bот\s[0-9][0-9]?[\.\s]|$)", content, drp)
+    rr = re.search(ur"%s|$)" % inv_base, content, drp)
     if rr:
         text = content[rr.start(0):]
         val, cell = getValueToTheRight(firstCell)
@@ -337,7 +350,8 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         fillVatType(pr, content)
         checkVatAmount(pr, content)
         if "СуммаНДС" in pr: return
-        if re.search(vatIntro, content, drp): # Возможно, сумма НДС находится в другой ячейке
+        rr = re.search(vatIntro, content, drp)
+        if rr and rr.group(1) != None: # Возможно, сумма НДС находится в другой ячейке
             val = getValueToTheRight(firstCell)[0]
             if val == None: return
             if (re.match(u"Без", val, drp)):
@@ -382,7 +396,7 @@ def findBankAccounts(text, pr):
 
 bndry = u"(?:\\b|[a-zA-Zа-яА-ЯёЁ ])"
 
-def processText(text, pr):
+def processText(text, pr, allowNewlines = False):
     if not u"р/с" in pr:
         findBankAccounts(text, pr)
     for fld, regexp in [
@@ -392,7 +406,7 @@ def processText(text, pr):
         for val in re.finditer("\\b" + fld + u"\\n? *(%s)\\b" % regexp, text, drp):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
-    rr = re.search(ur"^ *Сч[её]т\s*(на оплату|№|.*?\bот\s*[0-9]).*", text, drp | re.MULTILINE)
+    rr = re.search(ur"^\s*%s).*" % inv_base, text, drp | re.MULTILINE)
     if rr: fillField(pr, u"Счет", stripInvoiceNumber(rr.group(0).strip("")))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
@@ -433,14 +447,15 @@ def processText(text, pr):
             fillField(pr, u"КПП", val)
 
     # Ищем итоги, ставки и суммы НДС
-    for r in re.finditer(ur"Итого( [а-яА-ЯёЁ ]*)?:?\s*([0-9'\-\.,\s]*)", text, drp):
-        if r.group(1) == None or (re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
-            fillTotal(pr, parse(r.group(2).strip(".,")))
+    for r in re.finditer(ur"Итого ([^0-9\n]*)(\s*)([0-9'\-\.,\s]*)", text, drp):
+        if (allowNewlines or "\n" not in r.group(2)) and (
+                re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
+            fillTotal(pr, parse(r.group(3).strip(".,")))
 
-    if u"СуммаНДС"  not in pr: checkVatAmount(pr, text)
+    if u"СуммаНДС"  not in pr: checkVatAmount(pr, text, allowNewlines)
     if u"СтавкаНДС" not in pr: checkWithoutVat(pr, text)
 
-    findSumsInWords(text, pr)
+    if u"СуммаПрописью" not in pr: findSumsInWords(text, pr)
 
 def processImage(image, pr):
     debug = False
@@ -463,7 +478,7 @@ def processImage(image, pr):
 
 def pdfToTextPoppler(filename):
     debug = False
-    sp = subprocess.Popen(["pdftotext", filename, "-"], stdout=subprocess.PIPE, stderr=sys.stderr)
+    sp = subprocess.Popen(["pdftotext", "-layout", filename, "-"], stdout=subprocess.PIPE, stderr=sys.stderr)
     txtdata, stderrdata = sp.communicate()
     if sp.poll() != 0:
         errWrite("%s: Call to pdftotext failed, errcode is %i\n" % (filename, sp.poll()))
@@ -528,8 +543,9 @@ def processExcel(filename, pr):
             for row in range(sht.nrows):
                 for col in range(sht.ncols):
                     val = sht.cell_value(row, col)
-                    if isinstance(val, float): text += u"%.2f\n" % val
-                    else: text += unicode(sht.cell_value(row, col)) + "\n"
+                    if isinstance(val, float): text += u"%.2f\t" % val
+                    else: text += unicode(sht.cell_value(row, col).strip()) + "\t"
+                text += "\n"
         processText(text, pr)
 
 def processMsWord(filename, pr):
@@ -543,7 +559,7 @@ def processMsWord(filename, pr):
     if debug:
         with open("invext-debug.txt","w") as f:
             f.write(docdata)
-    processText(docdata.decode("utf-8"), pr)
+    processText(docdata.decode("utf-8"), pr, True)
 
 def getBicData(bic):
     url = "http://www.bik-info.ru/bik_%s.html" % bic
