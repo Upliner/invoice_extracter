@@ -749,7 +749,7 @@ dateStr = datetime.date.today().strftime("%d.%m.%Y")
 
 fileHeader = (
 u"""1CClientBankExchange
-ВерсияФормата=1.01
+ВерсияФормата=1.02
 Кодировка=Windows
 ДатаСоздания={0}
 ВремяСоздания={1}
