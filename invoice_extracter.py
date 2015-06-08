@@ -234,6 +234,20 @@ if u"БИК" in our and u"р/с" in our and u"Корсчет" in our:
     if not checkBicAcc(our):
         exit(1)
 
+def extractPdfImage(img):
+    filters = img.stream.get_filters()
+    if len(filters)>0 and filters[0][0].name == "DCTDecode":
+        return Image.open(BytesIO(img.stream.get_rawdata()))
+    if img.bits == 8 and img.colorspace[0].name == "DeviceRGB":
+        return Image.frombuffer("RGB", img.srcsize, img.stream.get_data(), "raw", "RGB", 0, 1)
+    if img.bits == 8 and img.colorspace[0].name == "DeviceGray":
+        return Image.frombuffer("L", img.srcsize, img.stream.get_data(), "raw", "L", 0, 1)
+    if img.bits == 1 and img.colorspace[0] == None:
+        return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1;I", 0, -1)
+    if img.bits == 1 and img.colorspace[0].name == "DeviceGray":
+        return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1", 0, 1)
+    errWrite("%s: image with unknown format found, skipping\n" % pr.get("filename"))
+
 # Убрать лишние данные из номера счёта
 def stripInvoiceNumber(num):
     m = re.search(ur"\b(от|дата):? *[0-3]?\d(\.[0-1]\d\.| *[а-яА-Я]* )(20)?\d\d( *г([г\.]|ода?)?)?", num, drp)
@@ -271,10 +285,10 @@ def pdfFindRight(pdf, pl):
     y = (pl.y0 + pl.y1) / 2
     result = None
     for obj in pdf:
-        if not isinstance(obj, LTTextBox): continue
+        if not isinstance(obj, LTTextBox) and not isinstance(obj, LTFigure): continue
         if obj.y0 > y or obj.y1 < y: continue
         for line in obj:
-            if not isinstance(line, LTTextLine): continue
+            if not isinstance(line, LTTextLine) and not isinstance(line, LTImage): continue
             if line.y0 > y or line.y1 < y or line.x0<=pl.x0: continue
             if result != None and result.x0 <= obj.x0: continue
             result = line
@@ -283,9 +297,17 @@ def pdfFindRight(pdf, pl):
 def processPdfLine(pdf, pl, pr):
     content = pl.get_text().strip()
     def getValueToTheRight(pdfLine):
-        pdfLine = pdfFindRight(pdf, pdfLine)
-        if pdfLine == None: return (None, None)
-        return (pdfLine.get_text(), pdfLine)
+        obj = pdfFindRight(pdf, pdfLine)
+        if obj == None: return (None, None)
+        if isinstance(obj, LTTextLine):
+            val = obj.get_text()
+        elif isinstance(obj, LTImage):
+            if pdfLine != pl: return (None, None)
+            img = extractPdfImage(obj)
+            if img == None: return (None, None)
+            val = image_to_string(img, lang="rus").decode("utf-8").strip()
+        else: raise AssertionError()
+        return (val, obj)
     processCellContent(content, getValueToTheRight, pl, pr)
 
 # Шаблон для поиска номера счёта
@@ -478,6 +500,7 @@ def processText(text, pr, allowNewlines = False):
 
 def processImage(image, pr):
     debug = False
+    if image == None: return
     def doProcess():
         text = image_to_string(image, lang="rus").decode("utf-8")
         if debug:
@@ -532,19 +555,7 @@ def processPDF(f, pr):
                     for img in obj:
                         if (isinstance(img, LTImage) and
                                 img.x0<x0 and img.y0<y0 and img.x1>x1 and img.y1>y1):
-                            filters = img.stream.get_filters()
-                            if len(filters)>0 and filters[0][0].name == "DCTDecode":
-                                pImage = Image.open(BytesIO(img.stream.get_rawdata()))
-                            elif img.bits == 8 and img.colorspace[0].name == "DeviceRGB":
-                                pImage = Image.frombuffer("RGB", img.srcsize, img.stream.get_data(), "raw", "RGB", 0, 1)
-                            elif img.bits == 8 and img.colorspace[0].name == "DeviceGray":
-                                pImage = Image.frombuffer("L", img.srcsize, img.stream.get_data(), "raw", "L", 0, 1)
-                            elif img.bits == 1 and img.colorspace[0].name == "DeviceGray":
-                                pImage = Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1", 0, 1)
-                            else:
-                                errWrite("%s: image with unknown format found, skipping\n" % pr["filename"])
-                                continue
-                            processImage(pImage, pr)
+                            processImage(extractPdfImage(img), pr)
                             foundImages = True
             if not foundImages:
                 # Подходящих картинок нет, используем pdftotext
