@@ -713,7 +713,7 @@ def finalizeAndCheck(pr, errs):
 
     # Генерируем назначение платежа
     try:
-        paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z](?: *на оплату)?(.*)", pr[u"Счет"], drp).group(1)
+        paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z](?:\s*на\sоплату\s*)?(.*)", pr[u"Счет"], drp).group(1)
     except KeyError: paydetails = u"Номер счета неизвестен."
     except AttributeError:
          # Не удалось поставить слово "Счёт" в родительный падеж, записываем как есть
