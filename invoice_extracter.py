@@ -75,7 +75,7 @@ drp = re.UNICODE | re.IGNORECASE # default regexp parameters
 #
 
 class Err:
-    def __repr__():
+    def __repr__(self):
         return ""
 
 def epsilonEquals(a,b):
@@ -143,6 +143,7 @@ def fillTotal(pr, val):
     if val == None: return
     if epsilonEquals(val, pr.get(u"ИтогоБезНДС")): return
     if epsilonEquals(val, pr.get(u"ИтогоСНДС")): return
+    if pr.get(u"СуммаПрописью", False): return
     oldTotal = pr.get(u"Итого")
     if oldTotal != None:
         if oldTotal == val: return
@@ -382,6 +383,10 @@ def findSumsInWords(text, pr):
             fillField(pr, u"СуммаНДС", psum)
             continue
 
+        if not pr.get(u"СуммаПрописью", False) and u"ИтогоСНДС" in pr:
+            # Удаляем предыдущие числовые значения т.к. сумма прописью самая надёжная
+            del pr[u"ИтогоСНДС"]
+
         fillField(pr, u"ИтогоСНДС", psum)
         pr[u"СуммаПрописью"] = True
 
@@ -447,10 +452,11 @@ def processText(text, pr, allowNewlines = False):
             fillField(pr, u"КПП", val)
 
     # Ищем итоги, ставки и суммы НДС
-    for r in re.finditer(ur"Итого\s?.?\s*(?:руб)?([^0-9\n]*)(\s*)([0-9'\-\.,\s]*)", text, drp):
-        if (allowNewlines or "\n" not in r.group(2)) and u"руб" not in r.group(1) and (
-                re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
-            fillTotal(pr, parse(r.group(3).strip(".,")))
+    if u"СуммаПрописью" not in pr:
+        for r in re.finditer(ur"Итого\s?.?\s*(?:руб)?([^0-9\n]*)(\s*)([0-9'\-\.,\s]*)", text, drp):
+            if (allowNewlines or "\n" not in r.group(2)) and u"руб" not in r.group(1) and (
+                    re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
+                fillTotal(pr, parse(r.group(3).strip(".,")))
 
     if u"СуммаНДС"  not in pr: checkVatAmount(pr, text, allowNewlines)
     if u"СтавкаНДС" not in pr: checkWithoutVat(pr, text)
