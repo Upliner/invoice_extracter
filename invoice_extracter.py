@@ -78,13 +78,12 @@ class Err:
     def __repr__(self):
         return ""
 
-def isErr(val): isinstance(val, Err)
+def isErr(val): return isinstance(val, Err)
 
 def epsilonEquals(a,b):
     if a == None or b == None: return False
     if isErr(a) or isErr(b): return False
-    test = abs(a-b)
-    return test < 0.0001
+    return abs(a-b) < 0.0001
 
 def parse(num):
     num = re.split(r"\t|\n", num.lstrip())[0] # При парсинге Excel подхватываются числа сразу из нескольких колонок
