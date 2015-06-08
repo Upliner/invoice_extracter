@@ -85,9 +85,9 @@ def epsilonEquals(a,b):
     return test < 0.0001
 
 def parse(num):
-    num = re.sub(ur"руб(лей)?\.?|\s|\u00a0", "", num, drp).strip(",. \n")
-    num = re.sub("[',\.]([0-9]{3})", r"\1", num)     # Удаляем точки, запятые и апострофы, отделяющие тысячи
-    num = re.sub("[,\-]([0-9][0-9]?)$", r".\1", num) # Заменяем запятую и дефис, отделяющие десятичные знаки, на точку
+    num = re.sub(ur"руб(лей)?\.?", "", num, drp).strip(u",. \u00a0\n")
+    num = re.sub(r"[',\.\s\u00a0]([0-9]{3})", r"\1", num) # Удаляем точки, запятые, апострофы и пробелы, отделяющие тысячи
+    num = re.sub(r"[,\-]([0-9][0-9]?)$", r".\1", num)     # Заменяем запятую и дефис, отделяющие десятичные знаки, на точку
     try:
        return float(num)
     except ValueError:
@@ -173,20 +173,19 @@ def checkWithoutVat(pr, text):
         fillField(pr, u"СуммаНДС", 0)
 
 def fillVatType(pr, content):
-    if "18%" in content: fillField(pr, u"СтавкаНДС", u"18%")
-    if "10%" in content: fillField(pr, u"СтавкаНДС", u"10%")
-    if "0%"  in content:
+    if re.search(r"\b18(.00)?%", content, drp): fillField(pr, u"СтавкаНДС", u"18%")
+    if re.search(r"\b10(.00)?%", content, drp): fillField(pr, u"СтавкаНДС", u"10%")
+    if re.search(r"\b[^\.,\d]0%", content, drp):
         fillField(pr, u"СтавкаНДС", u"0%")
         fillField(pr, u"СуммаНДС", 0)
 
-vatIntro = ur"(Всего|Итого|Сумма|в\sт\.\s?ч\.|в\sтом\sчисле|включая)?\s*НДС"
-
+vatIntro     = ur"(Всего|Итого|Сумма|в\sт\.\s?ч\.|в\sтом\sчисле|включая)?\s*НДС\s*"
+vatPercentRe = "[^\d\n]?(\d\d?(?:.00)?%)?[^\d\n]?"
 def checkVatAmount(pr, text, allowNewlines = False):
-    for r in re.finditer(vatIntro +                                                                 # Вводные слова
-             ur"\s*(?:по\sставке)?\s*[^\d\n]?(\d\d?%)?[^\d\n]?\s?[^\d\n]?\s*(?:руб)?([^\d\n]*)(\s*)"# Ставка НДС
-             ur"(?:([0-9\.,'\-\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?",      # Сумма НДС
+    for r in re.finditer(vatIntro +                                                            # Вводные слова
+             ur"(?:по\sставке)?\s*%s\s?[^\d\n]?\s*(?:руб)?([^\d\n]*)(\s*)" % vatPercentRe +    # Ставка НДС
+             ur"(?:([0-9\.,'\-\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
-
         if r.group(1) == None and r.group(2) == None: continue # Если нет вводного слова и ставки -- пропускаем
         if r.group(2) != None: fillVatType(pr, r.group(2)) # group 2: ставка НДС
         if r.group(3) != None and u"руб" in r.group(3):    # group 3: произвольные слова
@@ -198,7 +197,7 @@ def checkVatAmount(pr, text, allowNewlines = False):
         if r.group(5) != None:  # group 5: Сумма НДС
             vat = parse(r.group(5))
         if r.group(6) != None:  # group 6: Копейки в сумме НДС
-            vat += float(r.group(6))/100
+            vat += parse(r.group(6))/100
 
         if vat != None and (r.group(1) != None or (r.group(2) != None and pr.get(u"СтавкаНДС") == "18%")):
             fillField(pr, u"СуммаНДС", vat)
@@ -350,9 +349,8 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         checkWithoutVat(pr, content)
         fillVatType(pr, content)
         checkVatAmount(pr, content)
-        if "СуммаНДС" in pr: return
-        rr = re.search(vatIntro, content, drp)
-        if rr and rr.group(1) != None: # Возможно, сумма НДС находится в другой ячейке
+        rr = re.search(vatIntro + vatPercentRe, content, drp)
+        if rr and (rr.group(1) != None or rr.group(2) != None): # Возможно, сумма НДС находится в другой ячейке
             val = getValueToTheRight(firstCell)[0]
             if val == None: return
             if (re.match(u"Без", val, drp)):
@@ -458,7 +456,8 @@ def processText(text, pr, allowNewlines = False):
                     re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
                 fillTotal(pr, parse(r.group(3).strip(".,")))
 
-    if u"СуммаНДС"  not in pr: checkVatAmount(pr, text, allowNewlines)
+    vat = pr.get(u"СуммаНДС")
+    if not isinstance(vat, float): checkVatAmount(pr, text, allowNewlines)
     if u"СтавкаНДС" not in pr: checkWithoutVat(pr, text)
 
     if u"СуммаПрописью" not in pr: findSumsInWords(text, pr)
@@ -645,6 +644,7 @@ def requestCompanyNameIgk(inn):
         return None
 
 def finalizeAndCheck(pr, errs):
+    if isinstance(pr.get(u"СтавкаНДС"), Err): del pr[u"СуммаНДС"]
     for fld in pr.keys():
         if isinstance(pr[fld], Err): del pr[fld]
     if u"ИтогоСНДС" not in pr and u"Итого" in pr: pr[u"ИтогоСНДС"] = pr[u"Итого"]
@@ -729,7 +729,7 @@ def finalizeAndCheck(pr, errs):
         paydetails += u" Сумма %.2f" % pr[u"ИтогоСНДС"]
     vatRate = pr.get(u"СтавкаНДС")
     vat = pr.get(u"СуммаНДС")
-    if vatRate == u"БезНДС" or vat == 0:
+    if vatRate == u"БезНДС":
         paydetails += u", НДС не облагается"
     elif vat != None:
         paydetails += u", в т.ч. НДС"
