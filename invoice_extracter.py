@@ -2,6 +2,7 @@
 # -*- coding: utf-8
 
 import os, sys, xlrd, re, io, subprocess, urllib, urllib2, argparse, datetime, time, math
+from pdfminer.psparser import PSLiteral
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfparser import PDFParser
@@ -237,14 +238,17 @@ def extractPdfImage(img):
     filters = img.stream.get_filters()
     if len(filters)>0 and filters[0][0].name == "DCTDecode":
         return Image.open(BytesIO(img.stream.get_rawdata()))
-    if img.bits == 8 and img.colorspace[0].name == "DeviceRGB":
-        return Image.frombuffer("RGB", img.srcsize, img.stream.get_data(), "raw", "RGB", 0, 1)
-    if img.bits == 8 and img.colorspace[0].name == "DeviceGray":
-        return Image.frombuffer("L", img.srcsize, img.stream.get_data(), "raw", "L", 0, 1)
-    if img.bits == 1 and img.colorspace[0] == None:
-        return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1;I", 0, -1)
-    if img.bits == 1 and img.colorspace[0].name == "DeviceGray":
-        return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1", 0, 1)
+    if img.bits == 8:
+        if isinstance(img.colorspace[0], PSLiteral):
+            if img.colorspace[0].name == "DeviceRGB":
+                return Image.frombuffer("RGB", img.srcsize, img.stream.get_data(), "raw", "RGB", 0, 1)
+            if img.colorspace[0].name == "DeviceGray":
+                return Image.frombuffer("L", img.srcsize, img.stream.get_data(), "raw", "L", 0, 1)
+    if img.bits == 1:
+        if isinstance(img.colorspace[0], PSLiteral) and img.colorspace[0].name == "DeviceGray":
+            return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1", 0, 1)
+        if img.colorspace[0] == None:
+            return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1;I", 0, -1)
     errWrite("%s: image with unknown format found, skipping\n" % pr.get("filename"))
 
 # Убрать лишние данные из номера счёта
@@ -548,17 +552,14 @@ def processPDF(f, pr):
                         processPdfLine(layout, line, pr)
         if hasIncompleteFields(pr):
             # Файл не удалось полностью распознать, ищем картинки, перекрывающие всю страницу
-            foundImages = False
             for obj in layout:
                 if isinstance(obj, LTFigure):
                     for img in obj:
                         if (isinstance(img, LTImage) and
                                 img.x0<x0 and img.y0<y0 and img.x1>x1 and img.y1>y1):
                             processImage(extractPdfImage(img), pr)
-                            foundImages = True
-            if not foundImages:
-                # Подходящих картинок нет, используем pdftotext
-                processText(pdfToTextPoppler(pr["filename"]), pr)
+    if hasIncompleteFields(pr):
+        processText(pdfToTextPoppler(pr["filename"]), pr)
 
 def processExcel(filename, pr):
     wbk = xlrd.open_workbook(filename)
