@@ -699,7 +699,7 @@ def finalizeAndCheck(pr, errs):
     vat = pr.get(u"СуммаНДС")
     if vat != None and amt != None:
         if vat>(amt*0.18+0.1):
-            errs.append(u"%s: Ошибка: некорректная сумма НДС: %r\n" % (pr["filename"], vat))
+            errs.append(u"Ошибка: некорректная сумма НДС: %r" % vat)
             del pr[u"СуммаНДС"]
 
     # Автоматическое определение ставки НДС если явно не указано в документе
