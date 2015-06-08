@@ -323,7 +323,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         fillField(pr, u"Счет", stripInvoiceNumber(text.strip().replace("\n"," ").replace("  "," ")))
         return
 
-    if u" рубл" in content: findSumsInWords(content, pr)
+    if re.search(ur"\sруб", content, drp): findSumsInWords(content, pr)
     if (re.match(u"Итого|Всего|Сумма", content, drp) and
             (re.search(u"(с|без)\s*НДС", content, drp) or not u"НДС" in content)):
         if ":" in content: val = getSecondValue(":")
