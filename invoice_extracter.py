@@ -152,7 +152,7 @@ def fillTotal(pr, val):
             pr[u"СуммаНДС"] = Err()
         if isinstance(oldTotal, Err): return
         withoutVat = min(val, oldTotal)
-        withVat = min(val, oldTotal)
+        withVat = max(val, oldTotal)
         if abs(withVat/1.18-withoutVat)>0.1:
             if args.verbose:
                 errWrite(u"%s: Найдено несколько различных числовых сумм Итого, полагаемся только на сумму прописью\n" % (pr["filename"]))
@@ -166,7 +166,7 @@ def fillTotal(pr, val):
 
 # Функции по поиску и обработке строк с данными по НДС
 def checkWithoutVat(pr, text):
-    rr = re.search(ur"(Сумма|Цена|Итого|Всего)?.*?Без\s*(налога)?\s*\(?НДС", text, drp)
+    rr = re.search(ur"(Сумма|Цена|Итого|Всего)?(\s*|.*?)Без\s*(налога)?\s*\(?НДС", text, drp)
     if (rr != None and rr.group(1) == None) or u"НДС не облагается" in text:
         fillField(pr, u"СтавкаНДС", u"БезНДС")
         fillField(pr, u"СуммаНДС", 0)
@@ -182,13 +182,13 @@ vatIntro = ur"(Всего|Итого|Сумма|в\sт\.\s?ч\.|в\sтом\sчи
 
 def checkVatAmount(pr, text, allowNewlines = False):
     for r in re.finditer(vatIntro +                                                            # Вводные слова
-             ur"\s*(?:по\sставке)?\s*\(?([0-9]*%)?([^0-9\n]*)?(\s*)"                           # Ставка НДС
+             ur"\s*(?:по\sставке)?\s*\(?([0-9]*%)?\s?.?\s*(?:руб)?([^0-9\n]*)?(\s*)"           # Ставка НДС
              ur"(?:([0-9\.,'\-\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
 
         if r.group(1) == None and r.group(2) == None: continue # Если нет вводного слова и ставки -- пропускаем
         if r.group(2) != None: fillVatType(pr, r.group(2)) # group 2: ставка НДС
-        if r.group(3) != None and u"рубл" in r.group(3):   # group 3: произвольные слова
+        if r.group(3) != None and u"руб" in r.group(3):    # group 3: произвольные слова
             continue # Игнорировать сумму НДС прописью, она обрабатывается в другом месте
 
         if not allowNewlines and u"\n" in r.group(4): continue # group 4: whitespace
@@ -447,8 +447,8 @@ def processText(text, pr, allowNewlines = False):
             fillField(pr, u"КПП", val)
 
     # Ищем итоги, ставки и суммы НДС
-    for r in re.finditer(ur"Итого ([^0-9\n]*)(\s*)([0-9'\-\.,\s]*)", text, drp):
-        if (allowNewlines or "\n" not in r.group(2)) and (
+    for r in re.finditer(ur"Итого\s?.?\s*(?:руб)?([^0-9\n]*)(\s*)([0-9'\-\.,\s]*)", text, drp):
+        if (allowNewlines or "\n" not in r.group(2)) and u"руб" not in r.group(1) and (
                 re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
             fillTotal(pr, parse(r.group(3).strip(".,")))
 
