@@ -78,14 +78,18 @@ class Err:
     def __repr__(self):
         return ""
 
+def isErr(val): isinstance(val, Err)
+
 def epsilonEquals(a,b):
     if a == None or b == None: return False
-    if isinstance(a, Err) or isinstance(b, Err): return False
+    if isErr(a) or isErr(b): return False
     test = abs(a-b)
     return test < 0.0001
 
 def parse(num):
+    num = re.split(r"\t|\n", num.lstrip())[0] # При парсинге Excel подхватываются числа сразу из нескольких колонок
     num = re.sub(ur"руб(лей)?\.?", "", num, drp).strip(u",. \u00a0\n")
+    if len(num)==0: return None
     num = re.sub(r"[',\.\s\u00a0]([0-9]{3})", r"\1", num) # Удаляем точки, запятые, апострофы и пробелы, отделяющие тысячи
     num = re.sub(r"[,\-]([0-9][0-9]?)$", r".\1", num)     # Заменяем запятую и дефис, отделяющие десятичные знаки, на точку
     try:
@@ -125,7 +129,7 @@ def fillField(pr, fld, value):
     ourVal = our.get(fld)
     if fld == u"ИНН" and value == ourVal: return
     oldVal = pr.get(fld)
-    if isinstance(oldVal, Err): return
+    if isErr(oldVal): return
     if value == oldVal: return
     if value == ourVal and oldVal != None: return
     check = checkDict.get(fld)
@@ -151,7 +155,7 @@ def fillTotal(pr, val):
             errWrite(u"%s: Ошибка: найдено несколько итоговых сумм и слова \"Без НДС\"\n" % (pr["filename"]))
             pr[u"СтавкаНДС"] = Err()
             pr[u"СуммаНДС"] = Err()
-        if isinstance(oldTotal, Err): return
+        if isErr(oldTotal): return
         withoutVat = min(val, oldTotal)
         withVat = max(val, oldTotal)
         if abs(withVat/1.18-withoutVat)>0.1:
@@ -461,6 +465,16 @@ def processText(text, pr, allowNewlines = False):
     if u"СтавкаНДС" not in pr: checkWithoutVat(pr, text)
 
     if u"СуммаПрописью" not in pr: findSumsInWords(text, pr)
+
+    # Если найдена сумма прописью и не найден НДС, ищем по документу цифру,
+    # составляющую 118%/18% от суммы прописью
+    if u"СуммаПрописью" in pr and (u"СуммаНДС" not in pr or isErr(pr[u"СуммаНДС"])):
+        amtvat = pr[u"ИтогоСНДС"]/1.18*0.18
+        for nums in re.finditer(ur"\b([0-9'\-\.,\s]*)\b", text, drp):
+            for num in re.split(r"\t|     ", nums.group(0)):
+                num = parse(num)
+                if num != None and abs(amtvat-num)<0.05:
+                    pr[u"СуммаНДС"] = num
 
 def processImage(image, pr):
     debug = False
@@ -811,7 +825,7 @@ try:
         ext = ext.lower()
         pr = { "filename": f} # Parse result
         errWrite(f + "\n")
-        if (ext in ['.png','.bmp','.jpg','.jpeg','.gif']):
+        if (ext in ['.png','.bmp','.jpg','.jpeg','.gif','.tif','.tiff']):
             processImage(Image.open(f), pr)
         elif (ext == '.pdf'):
             with open(f, "rb") as ff: processPDF(ff, pr)
