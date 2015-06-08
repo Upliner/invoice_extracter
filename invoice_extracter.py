@@ -407,7 +407,7 @@ def processText(text, pr, allowNewlines = False):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
     rr = re.search(ur"^\s*%s).*" % inv_base, text, drp | re.MULTILINE)
-    if rr: fillField(pr, u"Счет", stripInvoiceNumber(rr.group(0).strip("")))
+    if rr: fillField(pr, u"Счет", stripInvoiceNumber(rr.group(0).strip()))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
     if u"ИНН" not in pr and u"КПП" not in pr:
