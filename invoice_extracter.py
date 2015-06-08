@@ -503,6 +503,10 @@ def processPDF(f, pr):
                                 pImage = Image.open(BytesIO(img.stream.get_rawdata()))
                             elif img.bits == 8 and img.colorspace[0].name == "DeviceRGB":
                                 pImage = Image.frombuffer("RGB", img.srcsize, img.stream.get_data(), "raw", "RGB", 0, 1)
+                            elif img.bits == 8 and img.colorspace[0].name == "DeviceGray":
+                                pImage = Image.frombuffer("L", img.srcsize, img.stream.get_data(), "raw", "L", 0, 1)
+                            elif img.bits == 1 and img.colorspace[0].name == "DeviceGray":
+                                pImage = Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1", 0, 1)
                             else:
                                 errWrite("%s: image with unknown format found, skipping\n" % pr["filename"])
                                 continue
