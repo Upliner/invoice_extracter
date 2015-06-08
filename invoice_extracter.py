@@ -166,7 +166,7 @@ def fillTotal(pr, val):
 
 # Функции по поиску и обработке строк с данными по НДС
 def checkWithoutVat(pr, text):
-    rr = re.search(ur"(Сумма|Цена|Итого|Всего)?(\s*|.*?)Без\s*(налога)?\s*\(?НДС", text, drp)
+    rr = re.search(ur"(Сумма|Цена|Итого|Всего)?(\s*|[^:;\n]*?)Без\s*(налога)?\s*\(?НДС", text, drp)
     if (rr != None and rr.group(1) == None) or u"НДС не облагается" in text:
         fillField(pr, u"СтавкаНДС", u"БезНДС")
         fillField(pr, u"СуммаНДС", 0)
@@ -182,7 +182,7 @@ vatIntro = ur"(Всего|Итого|Сумма|в\sт\.\s?ч\.|в\sтом\sчи
 
 def checkVatAmount(pr, text, allowNewlines = False):
     for r in re.finditer(vatIntro +                                                            # Вводные слова
-             ur"\s*(?:по\sставке)?\s*\(?([0-9]*%)?\s?.?\s*(?:руб)?([^0-9\n]*)?(\s*)"           # Ставка НДС
+             ur"\s*(?:по\sставке)?\s*.?([0-9][0-9]?%)?.?\s?.?\s*(?:руб)?([^0-9\n]*)?(\s*)"     # Ставка НДС
              ur"(?:([0-9\.,'\-\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
 
