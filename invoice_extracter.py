@@ -879,7 +879,7 @@ if __name__ == '__main__':
     oneC = OneCOutput("1c_to_kl.txt", our)
     try:
         for f in args.files:
-            sys.stderr.write(f + "\n")
+            print(f)
             pr = processFile(our, f.decode("utf-8"))
             if len(pr) == 0:
                 errWrite(u"Не распознано\n")
