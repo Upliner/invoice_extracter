@@ -482,7 +482,7 @@ def processText(text, pr, allowNewlines = False):
 
     # Ищем итоги, ставки и суммы НДС
     if u"СуммаПрописью" not in pr:
-        for r in re.finditer(ur"Итого\s?.?\s*(?:руб)?([^0-9\n]*)(\s*)([0-9'\-\.,\s]*)", text, drp):
+        for r in re.finditer(ur"Итого\s?[^0-9\n]?\s*(?:руб)?([^0-9\n]*)(\s*)([0-9'\-\.,\s]*)", text, drp):
             if (allowNewlines or "\n" not in r.group(2)) and u"руб" not in r.group(1) and (
                     re.match(u"(c|без) *НДС",r.group(1), drp) or not u"НДС" in r.group(1)):
                 fillTotal(pr, parse(r.group(3).strip(".,")))
