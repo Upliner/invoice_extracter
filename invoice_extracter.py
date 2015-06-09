@@ -816,6 +816,7 @@ u"""СекцияДокумент=Платежное поручение
 ПлательщикИНН={our:ИНН}
 ПлательщикКПП={our:КПП}
 ПлательщикБанк1={our:Банк}
+ПлательщикБанк2={our:Банк2}
 ПлательщикБИК={our:БИК}
 ПлательщикКорсчет={our:Корсчет}
 ПолучательСчет={р/с}
@@ -857,8 +858,12 @@ class OneCOutput:
         self.fout.write(u"КонецФайла\n".encode("cp1251"))
         self.fout.close()
 
-    def __exit__(self):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
         self.close()
+        return False
 
 if __name__ == '__main__':
     args, our = parseArguments()
