@@ -395,7 +395,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
 
 def hasIncompleteFields(pr):
     if u"ИтогоСНДС" not in pr and u"Итого" not in pr: return True
-    for i in [u"р/с", u"ИНН", u"КПП", u"БИК", u"Счет", u"СуммаНДС"]:
+    for i in [u"р/с", u"ИНН", u"КПП", u"БИК", u"Счет", u"СуммаНДС", "СуммаПрописью"]:
         if i not in pr: return True
     return False
 
