@@ -682,13 +682,14 @@ def finalizeAndCheck(pr):
         if bicData:
             if bicData[u"Корсчет"] != pr.get(u"Корсчет", ""):
                 if u"Корсчет" in pr and pr[u"Корсчет"] == pr.our.get(u"Корсчет"):
-                    if verbose: pr.errs.append(u"Настоящий корсчёт не распознался: в файле %s, в базе %s" % (
-                        pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
                     # Распознался наш корсчёт, настоящий корсчёт не распознался, либо его нет
                     if len(bicData[u"Корсчет"]) == 0:
                         del pr[u"Корсчет"] # На самом деле корсчёта быть не должно
                     else:
-                        pr[u"Корсчет"] = bicData[u"Корсчет"] # На самом деле корсчёт другой, но он не распознался, возможно из-за OCR
+                        # На самом деле корсчёт другой, но он не распознался, возможно из-за OCR
+                        if verbose: pr.errs.append(u"Настоящий корсчёт не распознался: в файле %s, в базе %s" % (
+                            pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
+                        pr[u"Корсчет"] = bicData[u"Корсчет"]
                 else:
                     pr.errs.append(u"Ошибка: не совпадает корсчёт: в файле %s, в базе %s" % (
                         pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
@@ -882,7 +883,7 @@ if __name__ == '__main__':
             print(f)
             pr = processFile(our, f.decode("utf-8"))
             if len(pr) == 0:
-                errWrite(u"Не распознано\n")
+                print(u"Не распознано")
                 for err in pr.errs: print(err)
             else:
                 try:
