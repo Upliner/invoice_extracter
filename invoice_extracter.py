@@ -195,15 +195,15 @@ vatIntro     = ur"(Всего|Итого|Сумма|в\sт\.\s?ч\.|в\sтом\s
 vatPercentRe = "[^\d\n]?(\d\d?(?:.00)?%)?[^\d\n]?"
 def checkVatAmount(pr, text, allowNewlines = False):
     for r in re.finditer(vatIntro +                                                            # Вводные слова
-             ur"(?:по\sставке)?\s*%s\s?[^\d\n]?\s*(?:руб)?([^\d\n]*)(\s*)" % vatPercentRe +    # Ставка НДС
+             ur"(?:по\sставке)?\s*%s(\s?[^\d\n]?\s*(?:руб)?([^\d\n]*)\s*)" % vatPercentRe +    # Ставка НДС
              ur"(?:([0-9\.,'\-\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
         if r.group(1) == None and r.group(2) == None: continue # Если нет вводного слова и ставки -- пропускаем
         if r.group(2) != None: fillVatType(pr, r.group(2)) # group 2: ставка НДС
-        if r.group(3) != None and u"руб" in r.group(3):    # group 3: произвольные слова
+        if r.group(4) != None and u"руб" in r.group(4):    # group 4: произвольные слова
             continue # Игнорировать сумму НДС прописью, она обрабатывается в другом месте
 
-        if not allowNewlines and u"\n" in r.group(4): continue # group 4: whitespace
+        if not allowNewlines and u"\n" in r.group(3): continue # group 3: whitespace и произовольные слова
 
         vat = None
         if r.group(5) != None:  # group 5: Сумма НДС
