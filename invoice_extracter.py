@@ -251,7 +251,7 @@ def extractPdfImage(pr, img):
             return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1", 0, 1)
         if img.colorspace[0] == None:
             return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1;I", 0, -1)
-    pr.errs.append("image with unknown format found, skipping")
+    if verbose: pr.errs.append("image with unknown format found, skipping")
 
 # Убрать лишние данные из номера счёта
 def stripInvoiceNumber(num):
