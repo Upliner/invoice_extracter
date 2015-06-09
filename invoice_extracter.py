@@ -517,7 +517,7 @@ def processImage(image, pr):
         for fld in pr.keys():
             if fld != "filename": del pr[fld]
         if verbose:
-            errWrite(u"Не удалось распознать изображение, повтор с более высоким разрешением")
+            errWrite(u"Не удалось распознать изображение, повтор с более высоким разрешением\n")
         multiplier = (8000000.0/image.size[0]/image.size[1]) ** 0.5
         image = image.resize(tuple([int(i * multiplier) for i in image.size]), Image.BICUBIC)
         if debug: image.save("invext-debug.png", "PNG")
