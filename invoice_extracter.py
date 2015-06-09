@@ -103,8 +103,8 @@ def parse(num):
     num = re.split(r"\t|\n", num.lstrip())[0] # При парсинге Excel подхватываются числа сразу из нескольких колонок
     num = re.sub(ur"руб(лей)?\.?", "", num, drp).strip(u",. \u00a0\n")
     if len(num)==0: return None
-    num = re.sub(r"[',\.\s\u00a0]([0-9]{3})", r"\1", num) # Удаляем точки, запятые, апострофы и пробелы, отделяющие тысячи
-    num = re.sub(r"[,\-]([0-9][0-9]?)$", r".\1", num)     # Заменяем запятую и дефис, отделяющие десятичные знаки, на точку
+    num = re.sub(u"[',\\.\\s\u00a0]([0-9]{3})", r"\1", num) # Удаляем точки, запятые, апострофы и пробелы, отделяющие тысячи
+    num = re.sub(r"[,\-]([0-9][0-9]?)$", r".\1", num)       # Заменяем запятую и дефис, отделяющие десятичные знаки, на точку
     try:
        return float(num)
     except ValueError:
@@ -209,7 +209,7 @@ def checkVatAmount(pr, text, allowNewlines = False):
         if r.group(5) != None:  # group 5: Сумма НДС
             vat = parse(r.group(5))
         if r.group(6) != None:  # group 6: Копейки в сумме НДС
-            vat += parse(r.group(6))/100
+            vat += float(r.group(6))/100
 
         if vat != None and (r.group(1) != None or (r.group(2) != None and pr.get(u"СтавкаНДС") == "18%")):
             fillField(pr, u"СуммаНДС", vat)
