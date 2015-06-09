@@ -15,55 +15,62 @@ from io import BytesIO
 from mylingv import searchSums
 from xml.sax.saxutils import unescape
 
-parser = argparse.ArgumentParser(description='Extract data from invoices.')
+verbose = False
+strict = False
 
-parser.add_argument("files", metavar="file", type=str, nargs="+", help="file to process")
-parser.add_argument("-v", "--verbose", dest="verbose", action='store_true',
-                   help='print every mismatched INN')
-parser.add_argument("-q", "--requisites", type=str, default = None, dest="reqfile",
-                   help="specify requisites file")
-parser.add_argument("--strict", action='store_true', dest="strict",
-                   help="remove KPP and coracc from output when mismatches with federal database")
-parser.add_argument("--inn", type=str, default = None, help="specify INN code")
-parser.add_argument("--kpp", type=str, default = None, help="specify KPP code")
-parser.add_argument("--acc", type=str, default = None, help="specify bank account")
-parser.add_argument("--bic", type=str, default = None, help="specify bank identification code")
-parser.add_argument("--coracc", type=str, default = None, help="specify bank transit account")
-
-args = parser.parse_args()
+devnull = open(os.devnull, "w")
 
 def errWrite(s):
     sys.stderr.write(s.encode("utf-8"))
 
-# Принимаем реквизиты из файла, коммандной строки или берём по умолчанию
+def parseArguments():
+    parser = argparse.ArgumentParser(description='Extract data from invoices.')
 
-if args.inn or args.kpp or args.acc or args.bic or args.coracc:
-    if args.reqfile != None:
-        errWrite(u"Ошибка: одновременно заданы реквизиты в файле и в коммандной строке\n")
-        sys.exit(1)
-    our = {}
-    for a, o in [("inn", u"ИНН"), ("kpp", u"КПП"), ("acc", u"р/с"), ("bic", u"БИК"), ("coracc", u"Корсчет")]:
-        val = vars(args)[a]
-        if val != None: our[o] = val
-elif args.reqfile == None:
-    our = {
-        u"Наименование": u"ООО Бесконтактные устройства",
-        u"ИНН": "7702818199",
-        u"КПП": "770201001",
-        u"р/с": "40702810700120030086",
-        u"Банк": u"ОАО АКБ \"АВАНГАРД\"",
-        u"БИК": "044525201",
-        u"Корсчет": "30101810000000000201",
-    }
-else:
-    our = {}
-    with open(args.reqfile.decode("utf-8"),"r") as cf: data = cf.read()
-    data = data.decode("utf-8")
-    for line in data.split("\n"):
-        line = line.strip()
-        if len(line) > 0:
-            key, val = line.split(":", 1)
-            our[key] = val.strip()
+    parser.add_argument("files", metavar="file", type=str, nargs="+", help="file to process")
+    parser.add_argument("-v", "--verbose", dest="verbose", action='store_true',
+                   help='verbose mode')
+    parser.add_argument("-q", "--requisites", type=str, default = None, dest="reqfile",
+                   help="specify requisites file")
+    parser.add_argument("--strict", action='store_true', dest="strict",
+                   help="remove KPP and coracc from output when mismatches with federal database")
+    parser.add_argument("--inn", type=str, default = None, help="specify INN code")
+    parser.add_argument("--kpp", type=str, default = None, help="specify KPP code")
+    parser.add_argument("--acc", type=str, default = None, help="specify bank account")
+    parser.add_argument("--bic", type=str, default = None, help="specify bank identification code")
+    parser.add_argument("--coracc", type=str, default = None, help="specify bank transit account")
+
+    args = parser.parse_args()
+
+    # Принимаем реквизиты из файла, коммандной строки или берём по умолчанию
+    if args.inn or args.kpp or args.acc or args.bic or args.coracc:
+        if args.reqfile != None:
+            errWrite(u"Ошибка: одновременно заданы реквизиты в файле и в коммандной строке\n")
+            sys.exit(1)
+        our = {}
+        for a, o in [("inn", u"ИНН"), ("kpp", u"КПП"), ("acc", u"р/с"), ("bic", u"БИК"), ("coracc", u"Корсчет")]:
+            val = vars(args)[a]
+            if val != None: our[o] = val
+    elif args.reqfile == None:
+        our = {
+            u"Наименование": u"ООО Бесконтактные устройства",
+            u"ИНН": "7702818199",
+            u"КПП": "770201001",
+            u"р/с": "40702810700120030086",
+            u"Банк": u"ОАО АКБ \"АВАНГАРД\"",
+            u"БИК": "044525201",
+            u"Корсчет": "30101810000000000201",
+        }
+    else:
+        our = {}
+        with open(args.reqfile.decode("utf-8"),"r") as cf: data = cf.read()
+        data = data.decode("utf-8")
+        for line in data.split("\n"):
+            line = line.strip()
+            if len(line) > 0:
+                key, val = line.split(":", 1)
+                our[key] = val.strip()
+
+    return (args, our)
 
 drp = re.UNICODE | re.IGNORECASE # default regexp parameters
 
@@ -74,6 +81,12 @@ drp = re.UNICODE | re.IGNORECASE # default regexp parameters
 # Первое десятизначное число интерпретируем как ИНН, первое девятизначное с первыми четырьмя 
 # цифрами, совпадающими с ИНН - как КПП, первое девятизначное, начинающиеся с 04 -- как БИК
 #
+
+class ParseResult(dict):
+    def __init__(self, our, filename = None):
+        self.filename = filename
+        self.our = our
+        self.errs = []
 
 class Err:
     def __repr__(self):
@@ -105,7 +118,7 @@ def checkInn(val):
     # Проверка контрольных цифр
     def innControlDigit(idx):
         if int(val[idx]) != sum(int(i)*c for i,c in zip(val[:idx],innChk[-idx:]))%11%10:
-            if args.verbose: errWrite(u"Неверная контрольная цифра %i в ИНН: %r\n" % (idx+1, val))
+            if verbose: errWrite(u"Неверная контрольная цифра %i в ИНН: %r\n" % (idx+1, val))
             return False
         return True
     if len(val) == 10:
@@ -118,15 +131,10 @@ def checkAcc(val): return re.match("[0-9]{20}$", val) != None
 
 checkDict = { u"ИНН": checkInn, u"КПП": checkKpp, u"БИК": checkBic, u"р/с": checkAcc, u"Корсчет": checkAcc }
 
-for fld, check in checkDict.iteritems():
-    if fld in our and not check(our[fld]):
-        errWrite(u"Ошибка: задан некорректный %s нашей организации: %s\n" % (fld, our[fld]))
-        exit(1)
-
 # Заполняет поле с именем fld, проверяет его, и проверяет, чтобы в поле уже не присутствовало другое значение
 def fillField(pr, fld, value):
     if value == None: return
-    ourVal = our.get(fld)
+    ourVal = pr.our.get(fld)
     if fld == u"ИНН" and value == ourVal: return
     oldVal = pr.get(fld)
     if isErr(oldVal): return
@@ -134,11 +142,11 @@ def fillField(pr, fld, value):
     if value == ourVal and oldVal != None: return
     check = checkDict.get(fld)
     if check != None and not check(value):
-        if args.verbose: errWrite(u"%s: Найден некорректный %s: %s\n" % (pr["filename"], fld, value))
+        if verbose: pr.errs.append(u"Найден некорректный %s: %s" % (fld, value))
         return
     if oldVal != None and value != ourVal and oldVal != ourVal:
        if fld == u"Счет": return
-       errWrite(u"%s: Найдено несколько различных %s: %s и %s\n" % (pr["filename"], fld, oldVal, value))
+       pr.errs.append(u"Найдено несколько различных %s: %s и %s" % (fld, oldVal, value))
        pr[fld]=Err()
        return
     pr[fld] = value
@@ -152,15 +160,15 @@ def fillTotal(pr, val):
     if oldTotal != None:
         if oldTotal == val: return
         if pr.get(u"СтавкаНДС") in [u"БезНДС", u"0%"]:
-            errWrite(u"%s: Ошибка: найдено несколько итоговых сумм и слова \"Без НДС\"\n" % (pr["filename"]))
+            pr.errs.append(u'Ошибка: найдено несколько итоговых сумм и слова "Без НДС"')
             pr[u"СтавкаНДС"] = Err()
             pr[u"СуммаНДС"] = Err()
         if isErr(oldTotal): return
         withoutVat = min(val, oldTotal)
         withVat = max(val, oldTotal)
         if abs(withVat/1.18-withoutVat)>0.1:
-            if args.verbose:
-                errWrite(u"%s: Найдено несколько различных числовых сумм Итого, полагаемся только на сумму прописью\n" % (pr["filename"]))
+            if verbose:
+                pr.errs.append(u"Найдено несколько различных числовых сумм Итого, полагаемся только на сумму прописью")
             pr[u"Итого"] = Err()
         else:
             fillField(pr, u"ИтогоБезНДС", withoutVat)
@@ -210,9 +218,7 @@ accChk = [7,1,3]*7+[7,1]
 # Проверка ключа банковского счёта по БИКу и номеру счёта
 def checkBicAcc(pr, errs = None):
     def showError():
-        err = u"Некорректный ключ номера счёта: %s" % pr[u"р/с"]
-        if errs == None: sys.stderr.write("Ошибка: %s\n" % err)
-        else: errs.append(err)
+        errs.append(u"Некорректный ключ номера счёта: %s" % pr[u"р/с"])
 
     if u"Корсчет" in pr:
        prefix = pr[u"БИК"][6:10]
@@ -230,11 +236,7 @@ def checkBicAcc(pr, errs = None):
         return False
     return True
 
-if u"БИК" in our and u"р/с" in our and u"Корсчет" in our:
-    if not checkBicAcc(our):
-        exit(1)
-
-def extractPdfImage(img):
+def extractPdfImage(pr, img):
     filters = img.stream.get_filters()
     if len(filters)>0 and filters[0][0].name == "DCTDecode":
         return Image.open(BytesIO(img.stream.get_rawdata()))
@@ -249,7 +251,7 @@ def extractPdfImage(img):
             return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1", 0, 1)
         if img.colorspace[0] == None:
             return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1;I", 0, -1)
-    errWrite("%s: image with unknown format found, skipping\n" % pr.get("filename"))
+    pr.errs.add("image with unknown format found, skipping")
 
 # Убрать лишние данные из номера счёта
 def stripInvoiceNumber(num):
@@ -306,7 +308,7 @@ def processPdfLine(pdf, pl, pr):
             val = obj.get_text()
         elif isinstance(obj, LTImage):
             if pdfLine != pl: return (None, None)
-            img = extractPdfImage(obj)
+            img = extractPdfImage(pr, obj)
             if img == None: return (None, None)
             val = image_to_string(img, lang="rus").decode("utf-8").strip()
         else: raise AssertionError()
@@ -350,7 +352,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             rm = re.match("[0-9]+", val)
             if not rm: return
             val = rm.group(0)
-            if val == our.get(fld): return
+            if val == pr.our.get(fld): return
             fillField(pr, fld, val)
             return
 
@@ -514,19 +516,19 @@ def processImage(image, pr):
     if hasIncompleteFields(pr) and image.size[0]*image.size[1] < 8000000:
         for fld in pr.keys():
             if fld != "filename": del pr[fld]
-        if args.verbose:
-            errWrite(u"Не удалось распознать изображение, повтор с более высоким разрешением\n")
+        if verbose:
+            errWrite(u"Не удалось распознать изображение, повтор с более высоким разрешением")
         multiplier = (8000000.0/image.size[0]/image.size[1]) ** 0.5
         image = image.resize(tuple([int(i * multiplier) for i in image.size]), Image.BICUBIC)
         if debug: image.save("invext-debug.png", "PNG")
         doProcess()
 
-def pdfToTextPoppler(filename):
+def pdfToTextPoppler(pr):
     debug = False
-    sp = subprocess.Popen(["pdftotext", "-layout", filename, "-"], stdout=subprocess.PIPE, stderr=sys.stderr)
+    sp = subprocess.Popen(["pdftotext", "-layout", pr.filename, "-"], stdout=subprocess.PIPE)
     txtdata, stderrdata = sp.communicate()
     if sp.poll() != 0:
-        errWrite("%s: Call to pdftotext failed, errcode is %i\n" % (filename, sp.poll()))
+        pr.errs.append("Call to pdftotext failed, errcode is %i" % sp.poll())
         return ""
     return txtdata.decode("utf-8")
 
@@ -557,12 +559,12 @@ def processPDF(f, pr):
                     for img in obj:
                         if (isinstance(img, LTImage) and
                                 img.x0<x0 and img.y0<y0 and img.x1>x1 and img.y1>y1):
-                            processImage(extractPdfImage(img), pr)
+                            processImage(extractPdfImage(pr, img), pr)
     if hasIncompleteFields(pr):
-        processText(pdfToTextPoppler(pr["filename"]), pr)
+        processText(pdfToTextPoppler(pr), pr)
 
-def processExcel(filename, pr):
-    wbk = xlrd.open_workbook(filename)
+def processExcel(pr):
+    wbk = xlrd.open_workbook(pr.filename, logfile = devnull)
     for sht in wbk.sheets():
         for row in range(sht.nrows):
             for col in range(sht.ncols):
@@ -578,26 +580,25 @@ def processExcel(filename, pr):
                 text += "\n"
         processText(text, pr)
 
-def processMsWord(filename, pr):
+def processMsWord(pr):
     debug = False
-    sp = subprocess.Popen(["antiword", "-x", "db", filename], stdout=subprocess.PIPE, stderr=sys.stderr)
+    sp = subprocess.Popen(["antiword", "-x", "db", pr.filename], stdout=subprocess.PIPE)
     docdata, stderrdata = sp.communicate()
     docdata = unescape(re.sub(r"</?[^>]+>", "\n", docdata))
     if sp.poll() != 0:
-        errWrite("%s: Call to antiword failed, errcode is %i\n" % (filename, sp.poll()))
+        pr.errs.append("Call to antiword failed, errcode is %i" % sp.poll())
         return
     if debug:
         with open("invext-debug.txt","w") as f:
             f.write(docdata)
     processText(docdata.decode("utf-8"), pr, True)
 
-def getBicData(bic):
+def getBicData(bic, errs):
     url = "http://www.bik-info.ru/bik_%s.html" % bic
     try:
         f = urllib2.urlopen(url)
     except urllib2.URLError:
-        errWrite(u"Ошибка: не удалось загрузить страницу %s\n" % url)
-        return None
+        errs.append(u"Ошибка: не удалось загрузить страницу %s" % url)
     page = f.read().decode("cp1251")
     f.close()
     try:
@@ -607,10 +608,9 @@ def getBicData(bic):
             u"Город": re.search(u"Расположение банка: <b>(.*?)</b>", page).group(1),
         }
     except AttributeError:
-        errWrite(u"Ошибка: не удалось распознать страницу %s\n" % url)
-        return None
+        errs.append(u"Ошибка: не удалось распознать страницу %s" % url)
 
-def requestCompanyInfoFedresurs(inn):
+def requestCompanyInfoFedresurs(inn, errs):
     data = urllib.urlencode({
     "ctl00$MainContent$txtCode": inn,
     "ctl00$MainContent$btnSearch": u"Поиск".encode("utf-8"),
@@ -630,45 +630,44 @@ def requestCompanyInfoFedresurs(inn):
         fp.close(); fp = None
         inn2 = re.search(ur"ИНН:</td>\s*<td>([0-9]{10})</td>", page, re.UNICODE).group(1)
         if inn2 != inn:
-            errWrite(u"Ошибка обращения к сайту fedresurs.ru: ИНН не соответствует запрошенному\n")
+            errs.append(u"Ошибка обращения к сайту fedresurs.ru: ИНН не соответствует запрошенному")
             return None
         return {
             u"КПП": re.search(ur"КПП:</td>\s*<td>([0-9]{9})</td>", page, re.UNICODE).group(1),
             u"Наименование": re.search(ur"<td>Сокращённое фирменное наименование:</td>\s*<td>(.*?)</td>", page, re.UNICODE).group(1),
         }
     except urllib2.URLError:
-        errWrite(u"Ошибка: не удалось загрузить страницу %s\n" % url)
-        return None
+        errs.append(u"Ошибка: не удалось загрузить страницу %s" % url)
     except AttributeError:
-        errWrite(u"Ошибка: не удалось распознать страницу %s\n" % url)
-        return None
+        errs.append(u"Ошибка: не удалось распознать страницу %s" % url)
     finally:
         if fp != None: fp.close()
+    return None
 
-def requestCompanyNameIgk(inn):
+def requestCompanyNameIgk(inn, errs):
     url = "http://online.igk-group.ru/ru/home?inn=" + inn
     try:
         f = urllib2.urlopen(url)
     except urllib2.URLError:
-        errWrite(u"Ошибка: не удалось загрузить страницу %s\n" % url)
+        errs.append(u"Ошибка: не удалось загрузить страницу %s" % url)
         return None
     page = f.read().decode("utf-8")
     f.close()
     try:
         inn2 = re.search(ur"<th>ИНН</th>\s*<td>([0-9]{10}(?:[0-9]{2})?)</td>", page, re.UNICODE).group(1)
         if inn2 != inn:
-            errWrite(u"Ошибка обращения к сайту igk-group.ru: ИНН не соответствует запрошенному\n")
+            errs.append(u"Ошибка обращения к сайту igk-group.ru: ИНН не соответствует запрошенному")
             return None
         if len(inn) == 12:
             return u"ИП " + re.search(ur"<th>Руководство</th>\s*<td>\s*(.*?)\s*</td>", page, re.UNICODE).group(1)
         elif len(inn) == 10:
             return re.search(ur"<th>Краткое название</th>\s*<td colspan=\"3\">\s*(.*?)\s*</td>", page, re.UNICODE).group(1)
-        else: raise AssertionError("Unchecked INN passed")
+        errs.append(u"Неверная длина ИНН: " + inn)
     except AttributeError:
-        errWrite(u"Ошибка: не удалось распознать страницу %s\n" % url)
-        return None
+        errs.append(u"Ошибка: не удалось распознать страницу %s" % url)
+    return None
 
-def finalizeAndCheck(pr, errs):
+def finalizeAndCheck(pr):
     if isinstance(pr.get(u"СтавкаНДС"), Err): del pr[u"СуммаНДС"]
     for fld in pr.keys():
         if isinstance(pr[fld], Err): del pr[fld]
@@ -676,14 +675,14 @@ def finalizeAndCheck(pr, errs):
     def deleteBank():
         for fld in [u"БИК", u"Корсчет", u"р/c"]:
             if fld in pr: del pr[fld]
-    if u"р/с" in pr and "БИК" in pr and not checkBicAcc(pr, errs):
+    if u"р/с" in pr and "БИК" in pr and not checkBicAcc(pr, pr.errs):
         deleteBank()
     if u"БИК" in pr:
-        bicData = getBicData(pr[u"БИК"])
+        bicData = getBicData(pr[u"БИК"], pr.errs)
         if bicData:
             if bicData[u"Корсчет"] != pr.get(u"Корсчет", ""):
-                if u"Корсчет" in pr and pr[u"Корсчет"] == our.get(u"Корсчет"):
-                    if args.verbose: errs.append(u"Настоящий корсчёт не распознался: в файле %s, в базе %s" % (
+                if u"Корсчет" in pr and pr[u"Корсчет"] == pr.our.get(u"Корсчет"):
+                    if verbose: pr.errs.append(u"Настоящий корсчёт не распознался: в файле %s, в базе %s" % (
                         pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
                     # Распознался наш корсчёт, настоящий корсчёт не распознался, либо его нет
                     if len(bicData[u"Корсчет"]) == 0:
@@ -691,9 +690,9 @@ def finalizeAndCheck(pr, errs):
                     else:
                         pr[u"Корсчет"] = bicData[u"Корсчет"] # На самом деле корсчёт другой, но он не распознался, возможно из-за OCR
                 else:
-                    errs.append(u"Ошибка: не совпадает корсчёт: в файле %s, в базе %s" % (
+                    pr.errs.append(u"Ошибка: не совпадает корсчёт: в файле %s, в базе %s" % (
                         pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
-                    if not args.strict and u"Корсчет" not in pr:
+                    if not strict and u"Корсчет" not in pr:
                         pr[u"Корсчет"] = bicData[u"Корсчет"]
                     else:
                         deleteBank()
@@ -701,36 +700,36 @@ def finalizeAndCheck(pr, errs):
                 pr[u"Банк"] = bicData[u"Наименование"]
                 pr[u"Банк2"] = u"г. " + bicData[u"Город"]
         else:
-            errs.append(u"Ошибка: не удалось получить данные по БИК %s" % pr[u"БИК"])
-            if args.strict: deleteBank()
+            pr.errs.append(u"Ошибка: не удалось получить данные по БИК %s" % pr[u"БИК"])
+            if strict: deleteBank()
 
     if u"ИНН" in pr:
         ci = None
         if len(pr[u"ИНН"]) == 10:
-            ci = requestCompanyInfoFedresurs(pr[u"ИНН"])
+            ci = requestCompanyInfoFedresurs(pr[u"ИНН"], pr.errs)
             if ci == None:
                 # Иногда fedresurs с первого раза не отвечает, пробуем снова через 1 секунду
                 time.sleep(1)
-                ci = requestCompanyInfoFedresurs(pr[u"ИНН"])
+                ci = requestCompanyInfoFedresurs(pr[u"ИНН"], pr.errs)
         if ci != None:
             if ci[u"КПП"] != pr.get(u"КПП", u""):
-                errs.append(u"Не совпадает КПП для %s: в файле %s, в базе %s" % (
+                pr.errs.append(u"Не совпадает КПП для %s: в файле %s, в базе %s" % (
                         ci[u"Наименование"], pr.get(u"КПП", u"пусто"), ci[u"КПП"]))
-                if args.strict: del pr[u"КПП"]
+                if strict: del pr[u"КПП"]
                 elif u"КПП" not in pr: pr[u"КПП"] = ci[u"КПП"]
             pr[u"Наименование"] = ci[u"Наименование"]
         else:
-            pr[u"Наименование"] = requestCompanyNameIgk(pr[u"ИНН"])
+            pr[u"Наименование"] = requestCompanyNameIgk(pr[u"ИНН"], pr.errs)
 
     if not pr.get(u"СуммаПрописью"):
-        errs.append(u"Предупреждение: сумма прописью не найдена")
+        pr.errs.append(u"Предупреждение: сумма прописью не найдена")
 
     # Проверяем, чтобы сумма НДС не была слишком большой (это значит, что некорректно подхватилось другое число)
     amt = pr.get(u"ИтогоСНДС")
     vat = pr.get(u"СуммаНДС")
     if vat != None and amt != None:
         if vat>(amt*0.18+0.1):
-            errs.append(u"Ошибка: некорректная сумма НДС: %r" % vat)
+            pr.errs.append(u"Ошибка: некорректная сумма НДС: %r" % vat)
             del pr[u"СуммаНДС"]
 
     # Автоматическое определение ставки НДС если явно не указано в документе
@@ -763,23 +762,41 @@ def finalizeAndCheck(pr, errs):
     pr[u"НазначениеПлатежа"] = paydetails
 
 def printMainInvoiceData(pr, fout):
-    item = itemTemplate
     if u"Счет" in pr: fout.write((pr[u"Счет"] + "\n").encode("utf-8"))
     else: fout.write(u"Номер счёта не найден\n".encode("utf-8"))
     for fld in [u"ИНН", u"р/с", u"БИК", u"НазначениеПлатежа"]:
         fout.write((u"%s: %s\n" % (fld, pr.get(fld, u"не найдено"))).encode("utf-8"))
 
-def outputTo1C(pr, fout):
-    item = itemTemplate
-    for fld in [u"ИНН", u"КПП", u"Наименование", u"р/с", u"Банк", u"Банк2", u"БИК", u"Корсчет", u"ИтогоСНДС", u"НазначениеПлатежа"]:
-        item = item.replace(u"{%s}" % fld, unicode(pr.get(fld, u"")))
-    item = re.sub(r"\{.*?\}","", item)
-    fout.write(item.encode("cp1251"))
+def processFile(our, f):
+    pr = ParseResult(our,f)
+    ext = os.path.splitext(f)[1].lower()
+    if (ext in ['.png','.bmp','.jpg','.jpeg','.gif','.tif','.tiff','.ppm']):
+        processImage(Image.open(f), pr)
+    elif (ext == '.pdf'):
+        with open(f, "rb") as ff: processPDF(ff, pr)
+    elif (ext in ['.xls', '.xlsx']):
+        processExcel(pr)
+    elif (ext in ['.doc']):
+        processMsWord(pr)
+    elif (ext in ['.txt', '.xml']):
+        with open(f, "rb") as ff: processText(ff.read().decode("utf-8"), pr)
+    else:
+        pr.errs.append("unknown extension")
+    return pr
 
-dateStr = datetime.date.today().strftime("%d.%m.%Y")
+def checkOur(our, errs):
+    result = True
+    for fld, check in checkDict.iteritems():
+        if fld in our and not check(our[fld]):
+            errs.add(u"Ошибка: задан некорректный %s нашей организации: %s" % (fld, our[fld]))
+            result = False
 
-fileHeader = (
-u"""1CClientBankExchange
+    if u"БИК" in our and u"р/с" in our and u"Корсчет" in our:
+        result &= checkBicAcc(our, errs)
+
+    return result
+
+oneCHeader = u"""1CClientBankExchange
 ВерсияФормата=1.02
 Кодировка=Windows
 ДатаСоздания={0}
@@ -787,9 +804,8 @@ u"""1CClientBankExchange
 ДатаНачала={0}
 ДатаКонца={0}
 РасчСчет={2}
-""")
-
-itemTemplate = (
+"""
+oneCItemTemplate = (
 u"""СекцияДокумент=Платежное поручение
 Дата={Дата}
 Сумма={ИтогоСНДС}
@@ -816,48 +832,59 @@ u"""СекцияДокумент=Платежное поручение
 Очередность=5
 НазначениеПлатежа={НазначениеПлатежа}
 КонецДокумента
-""").replace(u"{Дата}", dateStr)
+""")
 
-for fld, val in our.iteritems():
-    itemTemplate = itemTemplate.replace(u"{our:%s}" % fld, val)
-itemTemplate = re.sub(r"\{our:.*?\}","", itemTemplate)
+class OneCOutput:
+    def __init__(self, filename, our):
+        dateStr = datetime.date.today().strftime("%d.%m.%Y")
+        self.fout = open(filename, "w")
+        self.fout.write(oneCHeader.format(dateStr,
+            datetime.datetime.now().strftime("%H:%M:%S"),
+            our.get(u"р/с", "")).encode("cp1251"))
+        self.itemTemplate = oneCItemTemplate.replace(u"{Дата}", dateStr)
+        for fld, val in our.iteritems():
+            self.itemTemplate = self.itemTemplate.replace(u"{our:%s}" % fld, val)
+        self.itemTemplate = re.sub(r"\{our:.*?\}","", self.itemTemplate)
 
-fileFooter = u"КонецФайла\n"
+    def writeDocument(self, pr):
+        item = self.itemTemplate
+        for fld in [u"ИНН", u"КПП", u"Наименование", u"р/с", u"Банк", u"Банк2", u"БИК", u"Корсчет", u"ИтогоСНДС", u"НазначениеПлатежа"]:
+            item = item.replace(u"{%s}" % fld, unicode(pr.get(fld, u"")))
+        item = re.sub(r"\{.*?\}","", item)
+        self.fout.write(item.encode("cp1251"))
 
-fout = open("1c_to_kl.txt", "w")
-try:
-    fout.write(fileHeader.format(dateStr,
-        datetime.datetime.now().strftime("%H:%M:%S"),
-        our.get(u"р/с", "")).encode("cp1251"))
+    def close(self):
+        self.fout.write(u"КонецФайла\n".encode("cp1251"))
+        self.fout.close()
 
-    for f in args.files:
-        f = f.decode("utf-8")
-        f_, ext = os.path.splitext(f)
-        ext = ext.lower()
-        pr = { "filename": f} # Parse result
-        errWrite(f + "\n")
-        if (ext in ['.png','.bmp','.jpg','.jpeg','.gif','.tif','.tiff']):
-            processImage(Image.open(f), pr)
-        elif (ext == '.pdf'):
-            with open(f, "rb") as ff: processPDF(ff, pr)
-        elif (ext in ['.xls', '.xlsx']):
-            processExcel(f, pr)
-        elif (ext in ['.doc']):
-            processMsWord(f, pr)
-        elif (ext in ['.txt', '.xml']):
-            with open(f, "rb") as ff: processText(ff.read().decode("utf-8"), pr)
-        else:
-            errWrite("%s: unknown extension\n" % f)
-        if len(pr)>1:
-            errs = []
-            try:
-                finalizeAndCheck(pr, errs)
-                printMainInvoiceData(pr, sys.stderr)
-            finally:
-                for err in errs: errWrite("%s: %s\n" % (f, err))
-            outputTo1C(pr, fout)
-        else: errWrite(u"Не распознано\n")
-        fout.flush()
-finally:
-    fout.write(fileFooter.encode("cp1251"))
-    fout.close()
+    def __exit__(self):
+        self.close()
+
+if __name__ == '__main__':
+    args, our = parseArguments()
+
+    verbose = args.verbose
+    strict  = args.strict
+
+    errs = []
+    if not checkOur(our, errs):
+        for err in errs: sys.stderr.write(err + "\n")
+        exit(1)
+
+    oneC = OneCOutput("1c_to_kl.txt", our)
+    try:
+        for f in args.files:
+            sys.stderr.write(f + "\n")
+            pr = processFile(our, f.decode("utf-8"))
+            if len(pr) == 0:
+                errWrite(u"Не распознано\n")
+                for err in pr.errs: print(err)
+            else:
+                try:
+                    finalizeAndCheck(pr)
+                    printMainInvoiceData(pr, sys.stdout)
+                finally:
+                    for err in pr.errs: print(err)
+                oneC.writeDocument(pr)
+    finally:
+        oneC.close()
