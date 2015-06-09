@@ -179,7 +179,7 @@ def fillTotal(pr, val):
 
 # Функции по поиску и обработке строк с данными по НДС
 def checkWithoutVat(pr, text):
-    rr = re.search(ur"(Сумма|Цена|Итого|Всего)?(\s*|[^:;\n]*?)Без\s*(налога)?\s*\(?НДС", text, drp)
+    rr = re.search(ur"(Сумма|Цена|Итого|Всего)?(\s*|[^:;\n\t]*?)Без\s*(налога)?\s*\(?НДС", text, drp)
     if (rr != None and rr.group(1) == None) or u"НДС не облагается" in text:
         fillField(pr, u"СтавкаНДС", u"БезНДС")
         fillField(pr, u"СуммаНДС", 0)
