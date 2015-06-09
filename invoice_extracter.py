@@ -251,7 +251,7 @@ def extractPdfImage(pr, img):
             return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1", 0, 1)
         if img.colorspace[0] == None:
             return Image.frombuffer("1", img.srcsize, img.stream.get_data(), "raw", "1;I", 0, -1)
-    pr.errs.add("image with unknown format found, skipping")
+    pr.errs.append("image with unknown format found, skipping")
 
 # Убрать лишние данные из номера счёта
 def stripInvoiceNumber(num):
@@ -788,7 +788,7 @@ def checkOur(our, errs):
     result = True
     for fld, check in checkDict.iteritems():
         if fld in our and not check(our[fld]):
-            errs.add(u"Ошибка: задан некорректный %s нашей организации: %s" % (fld, our[fld]))
+            errs.append(u"Ошибка: задан некорректный %s нашей организации: %s" % (fld, our[fld]))
             result = False
 
     if u"БИК" in our and u"р/с" in our and u"Корсчет" in our:
