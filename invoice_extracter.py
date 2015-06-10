@@ -10,7 +10,7 @@ from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
 from pdfminer.converter import PDFPageAggregator, TextConverter
 from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTTextContainer, LTFigure, LTImage
 from pytesseract import image_to_string
-from PIL import Image
+from PIL import Image, ImageOps
 from io import BytesIO
 from mylingv import searchSums
 from xml.sax.saxutils import unescape
@@ -395,7 +395,7 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
 
 def hasIncompleteFields(pr):
     if u"ИтогоСНДС" not in pr and u"Итого" not in pr: return True
-    for i in [u"р/с", u"ИНН", u"КПП", u"БИК", u"Счет", u"СуммаНДС", "СуммаПрописью"]:
+    for i in [u"р/с", u"ИНН", u"КПП", u"БИК", u"Счет", u"СуммаНДС", u"СуммаПрописью"]:
         if i not in pr: return True
     return False
 
@@ -511,7 +511,11 @@ def processImage(image, pr):
         if debug:
             with open("invext-debug.txt","w") as f:
                 f.write(text.encode("utf-8"))
+            image.save("invext-debug.png", "PNG")
         processText(text, pr)
+    if image.mode == "RGB":
+        # Убираем синие подписи и печати
+        image = ImageOps.autocontrast(image).convert("L", (0,0,1.3,0))
     doProcess()
     if hasIncompleteFields(pr) and image.size[0]*image.size[1] < 8000000:
         for fld in pr.keys():
