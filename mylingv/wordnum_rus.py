@@ -1,13 +1,20 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
-from pyparsing import *
+import pyparsing as pp
 
-ParserElement.setDefaultWhitespaceChars(u" \t\n\r\u00a0")
+pp.ParserElement.setDefaultWhitespaceChars(u" .\t\n\r\u00a0")
 
 def makeList(lst):
-    return Or([CaselessKeyword(v) for v in lst])
+    if isinstance(lst, dict):
+        return pp.Or([pp.CaselessKeyword(v).setParseAction(pp.replaceWith(lst[v])) for v in lst])
+    else:
+        return pp.Or([pp.CaselessKeyword(v) for v in lst])
 
-dictUnitsCommon = {
+dictUnits = {
+    u"один"  :1,
+    u"одна"  :1,
+    u"два"   :2,
+    u"две"   :2,
     u"три"   :3,
     u"четыре":4,
     u"пять"  :5,
@@ -17,33 +24,21 @@ dictUnitsCommon = {
     u"девять":9,
 }
 
-dictUnitsMasc = {
-    u"один":1,
-    u"два" :2,
-    }
-
-
-dictUnitsFem = {
-    u"одна":1,
-    u"две" :2,
-    }
-
-unitsCommon = makeList(dictUnitsCommon)
-unitsMasc = makeList(dictUnitsMasc) ^ unitsCommon
-unitsFem = makeList(dictUnitsFem) ^ unitsCommon
+units = makeList(dictUnits)
 
 dictTeens = {
-    u"десять"      :10,
-    u"одиннадцать" :11,
-    u"двенадцать"  :12,
-    u"тринадцать"  :13,
-    u"четырнадцать":14,
-    u"пятнадцать"  :15,
-    u"шестнадцать" :16,
-    u"семнадцать"  :17,
-    u"восемнадцать":18,
-    u"девятнадцать":19,
-    }
+    u"десять"       :10,
+    u"одиннадцать"  :11,
+    u"двенадцать"   :12,
+    u"тринадцать"   :13,
+    u"четырнадцать" :14,
+    u"пятнадцать"   :15,
+    u"шестнадцать"  :16,
+    u"семнадцать"   :17,
+    u"восемнадцать" :18,
+    u"восемьнадцать":18,
+    u"девятнадцать" :19,
+}
 
 teens = makeList(dictTeens)
 
@@ -56,7 +51,7 @@ dictTens = {
     u"семьдесят"  :70,
     u"восемьдесят":80,
     u"девяносто"  :90,
-    }
+}
 
 tens = makeList(dictTens)
 
@@ -70,120 +65,46 @@ dictHundreds = {
     u"семьсот"  :700,
     u"восемьсот":800,
     u"девятьсот":900,
-    }
+}
 
 hundreds = makeList(dictHundreds)
 
-arrThousands = [u"тысяча", u"тысячи", u"тысяч"]
-arrMillions = [u"миллион", u"миллиона", u"миллионов"]
+thousands = makeList([u"тысяча", u"тысячи", u"тысяч"])
+millions  = makeList([u"миллион", u"миллиона", u"миллионов"])
 
-thousands = makeList(arrThousands)
-millions = makeList(arrMillions)
 
-zero = CaselessKeyword(u"ноль")
+asum = lambda arr: sum(arr)
+ath  = lambda arr: arr[0] * 1000
+amil = lambda arr: arr[0] * 1000000
 
-lessHundredMasc = (tens + Optional(unitsMasc)) ^ teens ^ unitsMasc
-lessHundredFem = (tens + Optional(unitsFem)) ^ teens ^ unitsFem
+zero = pp.CaselessKeyword(u"ноль").setParseAction(pp.replaceWith(0))
 
-lessThousandMasc = Group((hundreds + Optional(lessHundredMasc)) ^ lessHundredMasc)
-lessThousandFem = Group((hundreds + Optional(lessHundredFem)) ^ lessHundredFem)
+lessHundred = ((tens + pp.Optional(units)) ^ teens ^ units).setParseAction(asum)
 
-lessMillion = Group((lessThousandFem + thousands + Optional(lessThousandMasc)) ^ lessThousandMasc)
+lessThousand = (hundreds + pp.Optional(lessHundred)).setParseAction(asum) ^ lessHundred
 
-number = (lessThousandMasc + millions + Optional(lessMillion)) ^ lessMillion ^ zero
+lessMillion = ((lessThousand + thousands).setParseAction(ath ) + pp.Optional(lessThousand)).setParseAction(asum) ^ lessThousand
 
-totalDict = {}
-reverseDict = {0: u"ноль"}
-for d in [dictHundreds, dictTens, dictTeens, dictUnitsCommon, dictUnitsMasc, dictUnitsFem]:
-    totalDict.update(d)
+number =      ((lessThousand + millions ).setParseAction(amil) + pp.Optional(lessMillion )).setParseAction(asum) ^ lessMillion ^ zero
 
-for d in [dictUnitsCommon, dictUnitsMasc, dictTeens]:
-    for key, val in d.iteritems():
-        reverseDict[val] = key
+rub = makeList([u"рубль", u"рубля", u"рублей", u"руб"])
+kop = makeList([u"копейка", u"копейки", u"копеек", u"коп"])
 
-def chkNum(val, num, errs, arr):
-    if not num in arr: return
-    val = val.lower()
-    if val in [u"один", u"одна"]:
-        if num != arr[0]: errs.append(num)
-    elif val in [u"два", u"две", u"три", u"четыре"]:
-        if num != arr[1]: errs.append(num)
-    else:
-        if num != arr[2]: errs.append(num)
+sumParse = number + rub + (pp.Word(pp.srange("[0-9]"), None, 1,2) | lessHundred | zero) + kop
 
-def parseLessThousand(num):
-    if isinstance(num, unicode): return 0
-    result = 0
-    for subnum in num:
-        result += totalDict[subnum]
-    return result
-
-def parseThousands(num, errs):
-    if len(num)==1:
-        return parseLessThousand(num[0])
-    else:
-        chkNum(num[0][-1], num[1], errs, arrThousands)
-        result = parseLessThousand(num[0]) * 1000
-        if len(num)>2: result += parseLessThousand(num[2])
-        return result
-
-def parseMillions(num, errs):
-    if len(num)==1:
-        return parseThousands(num[0], errs)
-    else:
-        chkNum(num[0][-1], num[1], errs, arrMillions)
-        result = parseLessThousand(num[0]) * 1000000
-        if len(num)>2: result += parseThousands(num[2], errs)
-        return result
-
-def printErrors(errs):
-    for err in errs: print(u"Слово \"%s\" стоит в неверном падеже" % err)
-
-def parseNumber(s):
-    errs = []
-    result = parseMillions(number.parseString(s), errs)
-    printErrors(errs)
-    return result
-
-arrRub = [u"рубль", u"рубля", u"рублей"]
-arrKop = [u"копейка", u"копейки", u"копеек"]
-
-rub = Or([CaselessLiteral(v) for v in arrRub + [u"руб", u"руб."]])
-kop = Or([CaselessLiteral(v) for v in arrRub + [u"коп", u"коп."]])
-
-sumParse = Group(number) + rub + (Word(srange("[0-9]"), None, 1,2) | Group(lessHundredFem) | zero) + kop
-
-def parseRubKop(pr):
-    errs = []
-    result = parseMillions(pr[0], errs)
-    lastword = pr[0][-1]
-    while isinstance(lastword, ParseResults):
-        lastword = lastword[-1]
-    chkNum(lastword, pr[1], errs, arrRub)
-    if len(pr) > 3:
-        if isinstance(pr[2], ParseResults):
-            result += float(parseLessThousand(pr[2]))/100
-            chkNum(pr[2][-1], pr[3], errs, arrKop)
-        elif pr[2] == u"ноль":
-            chkNum(pr[2], pr[3], errs, arrKop)
-        else:
-            kop = int(pr[2])
-            result += float(kop)/100
-            chkNum(reverseDict[kop % 10 if kop > 19 else kop], pr[3], errs, arrKop)
-    printErrors(errs)
-    return result
+sumParse.setParseAction(lambda arr: arr[0] + float(arr[2])/100)
 
 def parseSum(s):
-    return parseRubKop(sumParse.parseString(s))
+    return sumParse.parseString(s)[0]
 
 def searchSums(text):
     for pr, start, end in sumParse.scanString(text):
-        yield parseRubKop(pr)
+        yield pr[0]
 
 def test(expected, s):
     try:
         val = parseSum(s)
-    except ParseException, pe:
+    except pp.ParseException, pe:
         print("Parsing failed:")
         print(pe.line)
         print("%s^" % (' '*(pe.col-1)))
