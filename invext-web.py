@@ -4,27 +4,35 @@
 import os, sys, datetime, traceback
 import invoice_extracter as ie
 
+lineNum = 1
+
+def safeprint(s):
+    global lineNum
+    sys.stdout.write(unicode(s).replace("\n"," ").encode("utf-8") + "\n")
+    lineNum += 1
+
 def finish(our, pr, errs, outfile):
-    print(datetime.date.today().strftime("%d.%m.%Y")) #1
-    print(our.get(u"ИНН", "")) #2
-    print(our.get(u"КПП", "")) #3
-    print(our.get(u"Наименование", "")) #4
-    print(pr.get(u"ИтогоСНДС", "")) #5
-    print(our.get(u"р/с", "")) #6
-    print((our.get(u"Банк", "") + ' ' + our.get(u"Банк2","")).strip()) #7
-    print(our.get(u"БИК", "")) #8
-    print(our.get(u"Корсчет", "")) #9
-    print((pr.get(u"Банк", "") + ' ' + pr.get(u"Банк2","")).strip()) #10
-    print(pr.get(u"БИК", "")) #11
-    print(pr.get(u"Корсчет", "")) #12
-    print(pr.get(u"ИНН", "")) #13
-    print(pr.get(u"КПП", "")) #14
-    print(pr.get(u"Наименование", "")) #15
-    print(pr.get(u"р/с", "")) #16
-    print(pr.get(u"НазначениеПлатежа", "")) #17
-    print(outfile) #18
+    safeprint(datetime.date.today().strftime("%d.%m.%Y")) #1
+    safeprint(our.get(u"ИНН", "")) #2
+    safeprint(our.get(u"КПП", "")) #3
+    safeprint(our.get(u"Наименование", "")) #4
+    safeprint(pr.get(u"ИтогоСНДС", "")) #5
+    safeprint(our.get(u"р/с", "")) #6
+    safeprint((our.get(u"Банк", "") + ' ' + our.get(u"Банк2","")).strip()) #7
+    safeprint(our.get(u"БИК", "")) #8
+    safeprint(our.get(u"Корсчет", "")) #9
+    safeprint((pr.get(u"Банк", "") + ' ' + pr.get(u"Банк2","")).strip()) #10
+    safeprint(pr.get(u"БИК", "")) #11
+    safeprint(pr.get(u"Корсчет", "")) #12
+    safeprint(pr.get(u"ИНН", "")) #13
+    safeprint(pr.get(u"КПП", "")) #14
+    safeprint(pr.get(u"Наименование", "")) #15
+    safeprint(pr.get(u"р/с", "")) #16
+    safeprint(pr.get(u"НазначениеПлатежа", "")) #17
+    safeprint(outfile) #18
+    assert(lineNum == 19)
     for err in errs:
-        print(err)
+        safeprint(err)
     sys.exit(0)
 errs = []
 our = {}
@@ -68,4 +76,9 @@ except SystemExit: pass
 except:
     errs.append("Python exception:")
     errs += [ i.rstrip('\n') for i in traceback.format_exception(*sys.exc_info()) ]
-    finish(our, {}, errs, outfile)
+    if lineNum == 1:
+        finish(our, {}, errs, outfile)
+    else:
+        if lineNum < 18: sys.stdout.write("\n"*(19-lineNum))
+        for err in errs:
+            safeprint(err)
