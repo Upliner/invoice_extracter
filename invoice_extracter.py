@@ -205,6 +205,9 @@ def checkVatAmount(pr, text, allowNewlines = False):
 
         if not allowNewlines and u"\n" in r.group(3): continue # group 3: whitespace и произовольные слова
 
+        # Блокируем случайный подхват нескольких строк с итогами в multiline режиме
+        if allowNewlines and re.search(u"Итого|Всего|Сумма", r.group(3), drp) != None: continue
+
         vat = None
         if r.group(5) != None:  # group 5: Сумма НДС
             vat = parse(r.group(5))
