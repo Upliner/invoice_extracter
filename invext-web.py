@@ -40,6 +40,7 @@ errs = []
 our = {}
 outfile = ""
 try:
+    # Берём данные из коммандной строки
     our = {
         u'ИНН': sys.argv[1],
         u'КПП': sys.argv[2],
@@ -48,8 +49,17 @@ try:
         u'р/с': sys.argv[5],
     }
     infile = sys.argv[6].decode("utf-8")
+
+    # Проверяем корректность введённых данных
     if not ie.checkOur(our, errs):
         finish(our, {}, errs, "")
+
+    # Создаём директорию "1C" в директории с входящим файлом
+    odir = os.path.join(os.path.dirname(infile), "1C")
+    if not os.path.isdir(odir):
+        os.mkdir(odir)
+
+    # Запрашиваем данные по введённому ИНН в online-базах
     ci = ie.requestCompanyInfoFedresurs(our[u"ИНН"], errs)
     if ci != None:
         our[u"Наименование"] = ci[u"Наименование"]
@@ -58,19 +68,20 @@ try:
         if name != None:
             our[u"Наименование"] = name
             errs = []
-    if not os.path.isdir("1C"):
-        os.mkdir("1C")
     bicData = ie.getBicData(our[u"БИК"], errs)
     if ci != None:
         our[u"Банк"] = bicData[u"Наименование"]
         our[u"Банк2"] = u"г. " + bicData[u"Город"]
 
+    # Обрабатываем файл со счётом
     pr = ie.processFile(our, infile)
     errs += pr.errs
     pr.errs = []
     ie.finalizeAndCheck(pr)
     errs += pr.errs
-    outfile = os.path.abspath("1C/" + os.path.basename(infile) + ".txt")
+
+    # Сохраняем результаты обработки в файл и выводим результаты в stdout
+    outfile = os.path.abspath(os.path.join(odir, os.path.basename(infile) + ".txt"))
     with ie.OneCOutput(outfile, our) as oneC:
         oneC.writeDocument(pr)
     finish(our, pr, errs, outfile)
