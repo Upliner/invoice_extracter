@@ -314,7 +314,7 @@ def processPdfLine(pdf, pl, pr):
             if pdfLine != pl: return (None, None)
             img = extractPdfImage(pr, obj)
             if img == None: return (None, None)
-            val = image_to_string(img, lang="rus").decode("utf-8").strip()
+            val = image_to_string(img, lang="rus+rusnum").decode("utf-8").strip()
         else: raise AssertionError()
         return (val, obj)
     processCellContent(content, getValueToTheRight, pl, pr)
@@ -510,7 +510,7 @@ def processImage(image, pr):
     debug = False
     if image == None: return
     def doProcess():
-        text = image_to_string(image, lang="rus").decode("utf-8")
+        text = image_to_string(image, lang="rus+rusnum").decode("utf-8")
         if debug:
             with open("invext-debug.txt","w") as f:
                 f.write(text.encode("utf-8"))
