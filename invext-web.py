@@ -16,7 +16,7 @@ def finish(our, pr, errs, outfile):
     safeprint(our.get(u"ИНН", "")) #2
     safeprint(our.get(u"КПП", "")) #3
     safeprint(our.get(u"Наименование", "")) #4
-    safeprint(pr.get(u"ИтогоСНДС", "")) #5
+    safeprint("%.2f" % pr.get(u"ИтогоСНДС", "")) #5
     safeprint(our.get(u"р/с", "")) #6
     safeprint((our.get(u"Банк", "") + ' ' + our.get(u"Банк2","")).strip()) #7
     safeprint(our.get(u"БИК", "")) #8
