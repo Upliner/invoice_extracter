@@ -144,11 +144,14 @@ def fillField(pr, fld, value):
     if check != None and not check(value):
         if verbose: pr.errs.append(u"Найден некорректный %s: %s" % (fld, value))
         return
+    if fld == u"СтавкаНДС" and oldVal == u"БезНДС" and "%" in value:
+        pr[u"СтавкаНДС"] = value
+        return
     if oldVal != None and value != ourVal and oldVal != ourVal:
-       if fld == u"Счет": return
-       pr.errs.append(u"Найдено несколько различных %s: %s и %s" % (fld, oldVal, value))
-       pr[fld]=Err()
-       return
+        if fld == u"Счет": return
+        pr.errs.append(u"Найдено несколько различных %s: %s и %s" % (fld, oldVal, value))
+        pr[fld]=Err()
+        return
     pr[fld] = value
 
 def fillTotal(pr, val):
@@ -182,14 +185,12 @@ def checkWithoutVat(pr, text):
     rr = re.search(ur"(Сумма|Цена|Итого|Всего)?(\s*|[^:;\n\t]*?)Без\s*(налога)?\s*\(?НДС", text, drp)
     if (rr != None and rr.group(1) == None) or u"НДС не облагается" in text:
         fillField(pr, u"СтавкаНДС", u"БезНДС")
-        fillField(pr, u"СуммаНДС", 0)
 
 def fillVatType(pr, content):
     if re.search(r"\b18(.00)?%", content, drp): fillField(pr, u"СтавкаНДС", u"18%")
     if re.search(r"\b10(.00)?%", content, drp): fillField(pr, u"СтавкаНДС", u"10%")
     if re.search(r"\b[^\.,\d]0%", content, drp):
         fillField(pr, u"СтавкаНДС", u"0%")
-        fillField(pr, u"СуммаНДС", 0)
 
 vatIntro     = ur"(Всего|Итого|Сумма|в\sт\.\s?ч\.|в\sтом\sчисле|включая)?\s*НДС\s*"
 vatPercentRe = "[^\d\n]?(\d\d?(?:.00)?%)?[^\d\n]?"
@@ -389,7 +390,6 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             if val == None: return
             if (re.match(u"Без", val, drp)):
                 fillField(pr, u"СтавкаНДС", u"БезНДС")
-                fillField(pr, u"СуммаНДС", 0)
                 return 
             fillField(pr, u"СуммаНДС", parse(val))
             return
