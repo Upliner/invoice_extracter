@@ -858,7 +858,9 @@ class OneCOutput:
     def writeDocument(self, pr):
         item = self.itemTemplate
         for fld in [u"ИНН", u"КПП", u"Наименование", u"р/с", u"Банк", u"Банк2", u"БИК", u"Корсчет", u"ИтогоСНДС", u"НазначениеПлатежа"]:
-            item = item.replace(u"{%s}" % fld, unicode(pr.get(fld, u"")))
+            val = pr.get(fld, u"")
+            if isinstance(val, float): val = "%.2f" % val
+            item = item.replace(u"{%s}" % fld, val)
         item = re.sub(r"\{.*?\}","", item)
         self.fout.write(item.encode("cp1251"))
 
