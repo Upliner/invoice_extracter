@@ -791,8 +791,9 @@ def processFile(our, f):
 
 def checkOur(our, errs):
     result = True
+    if len(our[u"ИНН"]) == 12: del our[u"КПП"]
     for fld, check in checkDict.iteritems():
-        if fld in our and not check(our[fld]):
+        if our.get(fld, "") != "" and not check(our[fld]):
             errs.append(u"Ошибка: задан некорректный %s нашей организации: %s" % (fld, our[fld]))
             result = False
 
