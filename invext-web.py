@@ -8,7 +8,9 @@ lineNum = 1
 
 def safeprint(s):
     global lineNum
-    sys.stdout.write(unicode(s).replace("\n"," ").encode("utf-8") + "\n")
+    if isinstance(s, float): s = "%.2f\n" % s
+    else: s = unicode(s).replace("\n"," ").encode("utf-8") + "\n"
+    sys.stdout.write(s)
     lineNum += 1
 
 def finish(our, pr, errs, outfile):
@@ -16,7 +18,7 @@ def finish(our, pr, errs, outfile):
     safeprint(our.get(u"ИНН", "")) #2
     safeprint(our.get(u"КПП", "")) #3
     safeprint(our.get(u"Наименование", "")) #4
-    safeprint("%.2f" % pr.get(u"ИтогоСНДС", "")) #5
+    safeprint(pr.get(u"ИтогоСНДС", "")) #5
     safeprint(our.get(u"р/с", "")) #6
     safeprint((our.get(u"Банк", "") + ' ' + our.get(u"Банк2","")).strip()) #7
     safeprint(our.get(u"БИК", "")) #8
