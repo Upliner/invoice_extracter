@@ -33,6 +33,8 @@ def finish(our, pr, errs, outfile):
     assert(lineNum == 19)
     for err in errs:
         safeprint(err)
+    safeprint(" ".join(sys.argv))
+    safeprint(outfile)
     sys.exit(0)
 errs = []
 our = {}
