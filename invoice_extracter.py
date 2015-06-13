@@ -752,12 +752,7 @@ def finalizeAndCheck(pr):
         del pr[u"ИтогоСНДС"]
 
     # Генерируем назначение платежа
-    try:
-        paydetails = u"Оплата по счету " + re.search(ur"[^а-яА-ЯёЁa-zA-Z\-]\s*(?:(?:на\sоплату\s*)|(?:[а-яА-Я]*\s*))?(.*)", pr[u"Счет"], drp).group(1)
-    except KeyError: paydetails = u"Номер счета неизвестен."
-    except AttributeError:
-         # Не удалось поставить слово "Счёт" в родительный падеж, записываем как есть
-        paydetails = u"Оплата по " + pr[u"Счет"]
+    paydetails = pr.get(u"Счет", u"Номер счета неизвестен")
 
     if u"ИтогоСНДС" in pr:
         paydetails += u" Сумма %.2f" % pr[u"ИтогоСНДС"]
