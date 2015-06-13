@@ -532,10 +532,11 @@ def processImage(image, pr):
 
 def pdfToTextPoppler(pr):
     debug = False
-    sp = subprocess.Popen(["pdftotext", "-layout", pr.filename, "-"], stdout=subprocess.PIPE)
+    sp = subprocess.Popen(["pdftotext", "-layout", pr.filename, "-"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     txtdata, stderrdata = sp.communicate()
     if sp.poll() != 0:
         pr.errs.append("Call to pdftotext failed, errcode is %i" % sp.poll())
+        pr.errs.append(stderrdata)
         return ""
     return txtdata.decode("utf-8")
 
@@ -589,11 +590,12 @@ def processExcel(pr):
 
 def processMsWord(pr):
     debug = False
-    sp = subprocess.Popen(["antiword", "-x", "db", pr.filename], stdout=subprocess.PIPE)
+    sp = subprocess.Popen(["antiword", "-x", "db", pr.filename], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     docdata, stderrdata = sp.communicate()
     docdata = unescape(re.sub(r"</?[^>]+>", "\n", docdata))
     if sp.poll() != 0:
         pr.errs.append("Call to antiword failed, errcode is %i" % sp.poll())
+        pr.errs.append(stderrdata)
         return
     if debug:
         with open("invext-debug.txt","w") as f:
