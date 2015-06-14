@@ -5,12 +5,14 @@ import os, sys, datetime, traceback
 import invoice_extracter as ie
 
 lineNum = 1
+dbgFile = None
 
 def safeprint(s):
     global lineNum
     if isinstance(s, float): s = "%.2f\n" % s
     else: s = unicode(s).replace("\n"," ").encode("utf-8") + "\n"
     sys.stdout.write(s)
+    if dbgFile != None: dbgFile.write(s)
     lineNum += 1
 
 def finish(our, pr, errs, outfile):
@@ -35,8 +37,6 @@ def finish(our, pr, errs, outfile):
     assert(lineNum == 19)
     for err in errs:
         safeprint(err)
-    safeprint(" ".join(sys.argv))
-    safeprint(outfile)
     sys.exit(0)
 errs = []
 our = {}
@@ -56,10 +56,17 @@ try:
     if not ie.checkOur(our, errs):
         finish(our, {}, errs, "")
 
-    # Создаём директорию "1C" в директории с входящим файлом
+    # Создаём директории "1C" и "debug" в директории с входящим файлом
     odir = os.path.join(os.path.dirname(infile), "1C")
     if not os.path.isdir(odir):
         os.mkdir(odir)
+    dbgdir = os.path.join(os.path.dirname(infile), "debug")
+    if not os.path.isdir(dbgdir):
+        os.mkdir(dbgdir)
+
+    # Выводим отладочные данные
+    dbgFile = open(os.path.join(dbgdir, "debug.txt"), "a")
+    dbgFile.write(" ".join(sys.argv))
 
     # Запрашиваем данные по введённому ИНН в online-базах
     ci = ie.requestCompanyInfoFedresurs(our[u"ИНН"], errs)
@@ -83,7 +90,7 @@ try:
     errs += pr.errs
 
     # Сохраняем результаты обработки в файл и выводим результаты в stdout
-    outfile = os.path.abspath(os.path.join(odir, os.path.basename(infile) + ".txt"))
+    outfile = os.path.abspath(os.path.join(odir, "1c_to_kl.txt"))
     with ie.OneCOutput(outfile, our) as oneC:
         oneC.writeDocument(pr)
     finish(our, pr, errs, outfile)
@@ -97,3 +104,5 @@ except:
         if lineNum < 18: sys.stdout.write("\n"*(19-lineNum))
         for err in errs:
             safeprint(err)
+finally:
+    if dbgFile != None: dbgFile.close()
