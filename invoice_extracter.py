@@ -444,7 +444,8 @@ def processText(text, pr, allowNewlines = False):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
     rr = re.search(ur"^\s*%s).*" % inv_base, text, drp | re.MULTILINE)
-    if rr: fillField(pr, u"Счет", stripInvoiceNumber(rr.group(0).strip()))
+    if rr: fillField(pr, u"Счет", re.sub(ur"^(Сч[её]т) м9 ", ur"\1 № ",
+                     stripInvoiceNumber(rr.group(0).strip()), flags=drp))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
     if u"ИНН" not in pr and u"КПП" not in pr:
@@ -521,8 +522,7 @@ def processImage(image, pr):
         image = ImageOps.autocontrast(image).convert("L", (0,0,1.3,0))
     doProcess()
     if hasIncompleteFields(pr) and image.size[0]*image.size[1] < 8000000:
-        for fld in pr.keys():
-            if fld != "filename": del pr[fld]
+        for fld in pr.keys(): del pr[fld]
         if verbose:
             errWrite(u"Не удалось распознать изображение, повтор с более высоким разрешением\n")
         multiplier = (8000000.0/image.size[0]/image.size[1]) ** 0.5
