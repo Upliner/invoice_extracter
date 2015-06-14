@@ -71,7 +71,7 @@ try:
             our[u"Наименование"] = name
             errs = []
     bicData = ie.getBicData(our[u"БИК"], errs)
-    if ci != None:
+    if bicData != None:
         our[u"Банк"] = bicData[u"Наименование"]
         our[u"Банк2"] = u"г. " + bicData[u"Город"]
 
