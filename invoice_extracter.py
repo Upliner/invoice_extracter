@@ -517,18 +517,15 @@ def processImage(image, pr):
                 f.write(text.encode("utf-8"))
             image.save("invext-debug.png", "PNG")
         processText(text, pr)
-    if image.mode == "RGB":
-        # Убираем синие подписи и печати
-        image = ImageOps.autocontrast(image).convert("L", (-0.5,-0.5,2,0))
+    # Увеличиваем маленькие изображения
     if hasIncompleteFields(pr) and image.size[0]*image.size[1] < 8000000:
         for fld in pr.keys(): del pr[fld]
-        if verbose:
-            errWrite(u"Не удалось распознать изображение, повтор с более высоким разрешением\n")
         multiplier = (8000000.0/image.size[0]/image.size[1]) ** 0.5
         image = image.resize(tuple([int(i * multiplier) for i in image.size]), Image.BICUBIC)
-        if debug: image.save("invext-debug.png", "PNG")
-        doProcess()
-    else:
+    doProcess()
+    if hasIncompleteFields(pr) and image.mode == "RGB":
+        # Убираем синие подписи и печати
+        image = ImageOps.autocontrast(image).convert("L", (-0.5,-0.5,2,0))
         doProcess()
 
 def pdfToTextPoppler(pr):
