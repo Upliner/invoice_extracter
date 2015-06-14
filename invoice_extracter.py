@@ -519,8 +519,7 @@ def processImage(image, pr):
         processText(text, pr)
     if image.mode == "RGB":
         # Убираем синие подписи и печати
-        image = ImageOps.autocontrast(image).convert("L", (0,0,1.3,0))
-    doProcess()
+        image = ImageOps.autocontrast(image).convert("L", (-0.5,-0.5,2,0))
     if hasIncompleteFields(pr) and image.size[0]*image.size[1] < 8000000:
         for fld in pr.keys(): del pr[fld]
         if verbose:
@@ -528,6 +527,8 @@ def processImage(image, pr):
         multiplier = (8000000.0/image.size[0]/image.size[1]) ** 0.5
         image = image.resize(tuple([int(i * multiplier) for i in image.size]), Image.BICUBIC)
         if debug: image.save("invext-debug.png", "PNG")
+        doProcess()
+    else:
         doProcess()
 
 def pdfToTextPoppler(pr):
