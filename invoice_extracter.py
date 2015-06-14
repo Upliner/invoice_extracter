@@ -444,7 +444,7 @@ def processText(text, pr, allowNewlines = False):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
     rr = re.search(ur"^\s*%s).*" % inv_base, text, drp | re.MULTILINE)
-    if rr: fillField(pr, u"Счет", re.sub(ur"^(Сч[её]т) м9 ", ur"\1 № ",
+    if rr: fillField(pr, u"Счет", re.sub(ur"^(Сч[её]т) м[9в] ", ur"\1 № ",
                      stripInvoiceNumber(rr.group(0).strip()), flags=drp))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
