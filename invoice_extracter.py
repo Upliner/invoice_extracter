@@ -519,7 +519,6 @@ def processImage(image, pr):
         processText(text, pr)
     # Увеличиваем маленькие изображения
     if hasIncompleteFields(pr) and image.size[0]*image.size[1] < 8000000:
-        for fld in pr.keys(): del pr[fld]
         multiplier = (8000000.0/image.size[0]/image.size[1]) ** 0.5
         image = image.resize(tuple([int(i * multiplier) for i in image.size]), Image.BICUBIC)
     doProcess()
