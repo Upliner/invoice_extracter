@@ -4,82 +4,43 @@ import re, struct, os, time
 from functools import partial
 
 commonDict = set()
-dawg = []
 with open(os.path.join(os.path.dirname(__file__), "numbers.dawg"), "rb") as f:
-    for item in iter(partial(f.read, 8), ''):
-       dawg.append(struct.unpack_from("<BBHi", item))
+    dawg = f.read()
+
+nodes = {}
 rootlen = len(dawg)
-for item in dawg:
-    if item[3] > 0:
-        rootlen = item[3]
-        break
-
-class SearchState: pass
-class DawgSearch:
-    def __init__(self):
-        self.states = []
-        self.state = SearchState()
-        self.state.node=0
-        self.state.len=rootlen
-        self.state.isTerminal=False
-        self.currentPrefix = ""
-    def _bisect(self, x):
-        lo = self.state.node
-        hi = lo + self.state.len
-        while lo < hi:
-            mid = (lo+hi)//2
-            val = dawg[mid][2]
-            if val == x: return mid
-            elif val < x: lo = mid+1
-            else: hi = mid
-        return None
-
-    def update(self, char, idx = None):
-        if idx == None: idx = self._bisect(ord(char))
-        if idx == None:
-            raise Exception('Cannot continue prefix "%s" with character "%s"' % (self.currentPrefix, char))
-        self.currentPrefix += char
-        self.states.append(self.state)
-        self.state = SearchState()
-        self.state.node = dawg[idx][3]
-        self.state.len = dawg[idx][1]
-        self.state.isTerminal = dawg[idx][0]>0
-
-    def backspace(self):
-        self.state = self.states.pop()
-        self.currentPrefix = self.currentPrefix[:-1]
-
-    def isFullWord(self): return self.state.isTerminal
-    def canUpdate(self, char): return self._bisect(ord(char)) != None
-    def nextLetters(self): return ((unichr(dawg[i][2]), i) for i in xrange(self.state.node, self.state.node+self.state.len))
-    def foreachLetter(self, fn):
-        for letter, idx in self.nextLetters():
-            self.update(letter, idx)
-            fn(letter)
-            self.backspace()
-    def getWords(self):
-        if self.isFullWord(): yield self.currentPrefix
-        for letter, idx in self.nextLetters():
-            self.update(letter, idx)
-            for i in self.getWords(): yield i
-            self.backspace()
-
-ds = DawgSearch()
+i = 0
+def readNode(idx):
+    global rootlen
+    cachedNode = nodes.get(idx)
+    if cachedNode != None: return cachedNode
+    item = struct.unpack_from("<BBHi", dawg, idx*8)
+    if item[3]>i and item[3]<rootlen: rootlen = item[3]
+    result = (item[0]>0, unichr(item[2]), [readNode(child) for child in xrange(item[3], item[3]+item[1])])
+    nodes[idx] = result
+    return result
+dawgRoot = []
+while i < rootlen:
+    dawgRoot.append(readNode(i))
+    i += 1
+del dawg
 
 def search( word, maxCost ):
     global _maxCost
     _maxCost = maxCost
     currentRow = range( len(word) + 1 )
     results = []
-    ds.foreachLetter(lambda letter: searchRecursive(ds, letter, word, currentRow, results))
+    for node in dawgRoot:
+        searchRecursive(node, "", node[1], word, currentRow, results)
     return results
 
 # This recursive helper is used by the search function above. It assumes that
 # the previousRow has been filled in already.
-def searchRecursive( ds, letter, word, previousRow, results):
+def searchRecursive(node, prefix, letter, word, previousRow, results):
     global _maxCost
     columns = len( word ) + 1
     currentRow = [ previousRow[0] + 1 ]
+    prefix+=letter
 
     # Build one row for the letter, with a column for each letter in the target
     # word, plus one for the empty string at column 0
@@ -96,13 +57,14 @@ def searchRecursive( ds, letter, word, previousRow, results):
         currentRow.append(min(insertCost, deleteCost, replaceCost))
     # if the last entry in the row indicates the optimal cost is less than the
     # maximum cost, and there is a word in this trie node, then add it.
-    if currentRow[-1] <= _maxCost and ds.isFullWord():
-        results.append((ds.currentPrefix, currentRow[-1]))
+    if currentRow[-1] <= _maxCost and node[0]:
+        results.append((prefix, currentRow[-1]))
         _maxCost = currentRow[-1]
     elif min( currentRow ) > _maxCost: return
     # if any entries in the row are less than the maximum cost, then
     # recursively search each branch of the trie
-    ds.foreachLetter(lambda letter: searchRecursive(ds, letter, word, currentRow, results))
+    for subNode in node[2]:
+        searchRecursive(subNode, prefix, subNode[1], word, currentRow, results)
 
 def fixword(word):
     if re.match("[0-9][0-9]?$", word):
