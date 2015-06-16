@@ -66,7 +66,7 @@ try:
 
     # Выводим отладочные данные
     dbgFile = open(os.path.join(dbgdir, "debug.txt"), "a")
-    dbgFile.write(" ".join(sys.argv))
+    dbgFile.write(" ".join(sys.argv) + "\n")
 
     # Запрашиваем данные по введённому ИНН в online-базах
     ci = ie.requestCompanyInfoFedresurs(our[u"ИНН"], errs)
@@ -83,7 +83,7 @@ try:
         our[u"Банк2"] = u"г. " + bicData[u"Город"]
 
     # Обрабатываем файл со счётом
-    pr = ie.processFile(our, infile)
+    pr = ie.processFile(our, infile.encode("utf-8"))
     errs += pr.errs
     pr.errs = []
     ie.finalizeAndCheck(pr)
