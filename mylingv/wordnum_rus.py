@@ -2,7 +2,7 @@
 # -*- coding: utf-8
 import pyparsing as pp
 
-pp.ParserElement.setDefaultWhitespaceChars(u" .\t\n\r\u00a0")
+pp.ParserElement.setDefaultWhitespaceChars(u" .,\t\n\r\u00a0")
 
 def makeList(lst):
     if isinstance(lst, dict):

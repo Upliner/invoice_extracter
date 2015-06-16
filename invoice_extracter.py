@@ -197,7 +197,7 @@ vatPercentRe = "[^\d\n]?(\d\d?(?:.00)?%)?[^\d\n]?"
 def checkVatAmount(pr, text, allowNewlines = False):
     for r in re.finditer(vatIntro +                                                            # Вводные слова
              ur"(?:по\sставке)?\s*%s(\s?[^\d\n]?\s*(?:руб)?([^\d\n]*)\s*)" % vatPercentRe +    # Ставка НДС
-             ur"(?:([0-9\.,'\-\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?", # Сумма НДС
+             ur"(?:([0-9][0-9\.,'\-\s]*)\s*(?:руб(?:лей)?\.?\s*([0-9][0-9]?)\s*коп(?:еек)?\.?)?)?", # Сумма НДС
              text, drp):
         if r.group(1) == None and r.group(2) == None: continue # Если нет вводного слова и ставки -- пропускаем
         if r.group(2) != None: fillVatType(pr, r.group(2)) # group 2: ставка НДС
@@ -444,7 +444,7 @@ def processText(text, pr, allowNewlines = False):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
     rr = re.search(ur"^\s*%s).*" % inv_base, text, drp | re.MULTILINE)
-    if rr: fillField(pr, u"Счет", re.sub(ur"^(Сч[её]т) м[9в] ", ur"\1 № ",
+    if rr: fillField(pr, u"Счет", re.sub(ur"^(Сч[её]т(?: на оплату)?) (?:не|м[9в]) ", ur"\1 № ",
                      stripInvoiceNumber(rr.group(0).strip()), flags=drp))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
@@ -486,7 +486,7 @@ def processText(text, pr, allowNewlines = False):
 
     # Ищем итоги, ставки и суммы НДС
     if u"СуммаПрописью" not in pr:
-        for r in re.finditer(ur"Итого(\s?[^0-9\n]?\s*(?:руб)?([^0-9\n]*)\s*)([0-9'\-\.,\s]*)", text, drp):
+        for r in re.finditer(ur"(?:Всего|Итого)(\s?[^0-9\n]?\s*(?:руб)?([^0-9\n]*)\s*)([0-9][0-9'\-\.,\s]*)", text, drp):
             if (allowNewlines or "\n" not in r.group(1)) and u"руб" not in r.group(2) and (
                     re.match(u"(c|без) *НДС",r.group(2), drp) or not u"НДС" in r.group(2)):
                 fillTotal(pr, parse(r.group(3).strip(".,")))
@@ -495,7 +495,7 @@ def processText(text, pr, allowNewlines = False):
     if not isinstance(vat, float): checkVatAmount(pr, text, allowNewlines)
     if u"СтавкаНДС" not in pr: checkWithoutVat(pr, text)
 
-    if u"СуммаПрописью" not in pr: findSumsInWords(text, pr)
+    if u"СуммаПрописью" not in pr: findSumsInWords(text.replace(u"ъ", u"ь"), pr)
 
     # Если найдена сумма прописью и не найден НДС, ищем по документу цифру,
     # составляющую 118%/18% от суммы прописью
