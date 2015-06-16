@@ -520,7 +520,7 @@ def processImage(image, pr):
     # Увеличиваем маленькие изображения
     if hasIncompleteFields(pr) and image.size[0]*image.size[1] < 8000000:
         multiplier = 3
-        image = image.resize(tuple([int(i * multiplier) for i in image.size]), Image.BILINEAR)
+        image = image.resize(tuple([int(i * multiplier) for i in image.size]), Image.BICUBIC)
     doProcess()
     if hasIncompleteFields(pr) and image.mode == "RGB":
         # Убираем синие подписи и печати
