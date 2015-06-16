@@ -12,7 +12,7 @@ from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTTextContainer, LT
 from pytesseract import image_to_string
 from PIL import Image, ImageOps
 from io import BytesIO
-from mylingv import searchSums
+from mylingv import searchSums, filterText
 from xml.sax.saxutils import unescape
 
 verbose = False
@@ -495,7 +495,7 @@ def processText(text, pr, allowNewlines = False):
     if not isinstance(vat, float): checkVatAmount(pr, text, allowNewlines)
     if u"СтавкаНДС" not in pr: checkWithoutVat(pr, text)
 
-    if u"СуммаПрописью" not in pr: findSumsInWords(text.replace(u"ъ", u"ь"), pr)
+    if u"СуммаПрописью" not in pr: findSumsInWords(filterText(text), pr)
 
     # Если найдена сумма прописью и не найден НДС, ищем по документу цифру,
     # составляющую 118%/18% от суммы прописью
