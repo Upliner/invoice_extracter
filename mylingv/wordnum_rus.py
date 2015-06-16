@@ -1,6 +1,7 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
 import pyparsing as pp
+from spellcheck import filterText
 
 pp.ParserElement.setDefaultWhitespaceChars(u" .,\t\n\r\u00a0")
 
@@ -99,6 +100,12 @@ def parseSum(s):
 def searchSums(text):
     for pr, start, end in sumParse.scanString(text):
         yield pr[0]
+
+def searchSumsFiltered(text):
+    for seq in filterText(text):
+        for pr, start, end in sumParse.scanString(seq):
+            yield pr[0]
+
 
 def test(expected, s):
     try:

@@ -64,18 +64,20 @@ class DawgSearch:
             for i in self.getWords(): yield i
             self.backspace()
 
+ds = DawgSearch()
+
 def search( word, maxCost ):
-
+    global _maxCost
+    _maxCost = maxCost
     currentRow = range( len(word) + 1 )
-
     results = []
-    ds = DawgSearch()
-    ds.foreachLetter(lambda letter: searchRecursive(ds, letter, word, currentRow, results, maxCost))
+    ds.foreachLetter(lambda letter: searchRecursive(ds, letter, word, currentRow, results))
     return results
 
 # This recursive helper is used by the search function above. It assumes that
 # the previousRow has been filled in already.
-def searchRecursive( ds, letter, word, previousRow, results, maxCost ):
+def searchRecursive( ds, letter, word, previousRow, results):
+    global _maxCost
     columns = len( word ) + 1
     currentRow = [ previousRow[0] + 1 ]
 
@@ -91,19 +93,19 @@ def searchRecursive( ds, letter, word, previousRow, results, maxCost ):
         else:
             replaceCost = previousRow[ column - 1 ]
 
-        currentRow.append( min( insertCost, deleteCost, replaceCost ) )
+        currentRow.append(min(insertCost, deleteCost, replaceCost))
     # if the last entry in the row indicates the optimal cost is less than the
     # maximum cost, and there is a word in this trie node, then add it.
-    if currentRow[-1] <= maxCost and ds.isFullWord():
+    if currentRow[-1] <= _maxCost and ds.isFullWord():
         results.append((ds.currentPrefix, currentRow[-1]))
-
-    if min( currentRow ) > maxCost: return
+        _maxCost = currentRow[-1]
+    elif min( currentRow ) > _maxCost: return
     # if any entries in the row are less than the maximum cost, then
     # recursively search each branch of the trie
-    ds.foreachLetter(lambda letter: searchRecursive(ds, letter, word, currentRow, results, maxCost))
+    ds.foreachLetter(lambda letter: searchRecursive(ds, letter, word, currentRow, results))
 
 def fixword(word):
-    if re.match("[0-9][0-9]?", word):
+    if re.match("[0-9][0-9]?$", word):
         return word
     if len(word)>15: return None
     if len(word)==1: return None
@@ -119,8 +121,10 @@ def filterText(text):
     result = u""
     for word in re.finditer(ur"[а-я0-9]+", text, re.IGNORECASE):
         word = fixword(word.group(0))
-        if word != None: result += word + " ";
-    return result
+        if word == None:
+            if len(result)>0: yield result; result = u""
+        else: result += word + " ";
+    if len(result)>0: yield result
 
 if __name__ == "__main__":
     import sys, time, cProfile, pstats, StringIO
@@ -136,7 +140,7 @@ if __name__ == "__main__":
                 if fw == None: continue
                 if fw == word: sys.stdout.write(word.encode("utf-8"))
                 else: sys.stdout.write(("%s -> %s" % (word, fw)).encode("utf-8"))
-                sys.stdout.write(" ")
+                sys.stdout.write(", ")
                 sys.stdout.flush()
         end = time.time()
     print
