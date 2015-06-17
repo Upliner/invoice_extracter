@@ -52,16 +52,14 @@ def searchRecursive(node, prefix, letter, word, previousRow, results):
     # Build one row for the letter, with a column for each letter in the target
     # word, plus one for the empty string at column 0
     for column in xrange(lo, hi):
-
-        insertCost = currentRow[column - 1] + 1
-        deleteCost = previousRow[column] + 1
-
-        if word[column - 1] != letter:
-            replaceCost = previousRow[ column - 1 ] + 1
+        if word[column - 1] == letter:
+            currentRow[column] = previousRow[ column - 1 ]
         else:
-            replaceCost = previousRow[ column - 1 ]
+            currentRow[column] = min(
+                currentRow[column - 1] + 1,
+                previousRow[column] + 1,
+                previousRow[column - 1] + 1)
 
-        currentRow[column] = min(insertCost, deleteCost, replaceCost)
     # if the last entry in the row indicates the optimal cost is less than the
     # maximum cost, and there is a word in this trie node, then add it.
     if currentRow[-1] <= _maxCost and node[0]:
