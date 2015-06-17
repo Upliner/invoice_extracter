@@ -1,9 +1,7 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
-import re, struct, os, time
-from functools import partial
+import re, struct, os
 
-commonDict = set()
 with open(os.path.join(os.path.dirname(__file__), "numbers.dawg"), "rb") as f:
     dawg = f.read()
 
@@ -24,6 +22,7 @@ while i < rootlen:
     dawgRoot.append(readNode(i))
     i += 1
 del dawg
+del nodes
 
 def search( word, maxCost ):
     global _maxCost
@@ -60,6 +59,7 @@ def searchRecursive(node, prefix, letter, word, previousRow, results):
     if currentRow[-1] <= _maxCost and node[0]:
         results.append((prefix, currentRow[-1]))
         _maxCost = currentRow[-1]
+        if _maxCost == 0: return
     elif min( currentRow ) > _maxCost: return
     # if any entries in the row are less than the maximum cost, then
     # recursively search each branch of the trie
@@ -92,8 +92,8 @@ if __name__ == "__main__":
     import sys, time, cProfile, pstats, StringIO
     pr = cProfile.Profile()
     pr.enable()
+    start = time.time()
     with open(sys.argv[1], "r") as f:
-        start = time.time()
         for line in f:
             line = line.decode("utf-8")
             for word in re.finditer(ur"[а-я0-9]+", line, re.IGNORECASE):
@@ -104,7 +104,7 @@ if __name__ == "__main__":
                 else: sys.stdout.write(("%s -> %s" % (word, fw)).encode("utf-8"))
                 sys.stdout.write(", ")
                 sys.stdout.flush()
-        end = time.time()
+    end = time.time()
     print
     print("Spellchecked file %s, time: %f s" % (sys.argv[1], end - start))
     s = StringIO.StringIO()
