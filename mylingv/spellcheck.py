@@ -2,6 +2,12 @@
 # -*- coding: utf-8
 import re, struct, os
 
+if __name__ == "__main__":
+    import sys, time, cProfile, pstats, StringIO
+    pr = cProfile.Profile()
+    pr.enable()
+    start = time.time()
+
 with open(os.path.join(os.path.dirname(__file__), "numbers.dawg"), "rb") as f:
     dawg = f.read()
 
@@ -38,12 +44,14 @@ def search( word, maxCost ):
 def searchRecursive(node, prefix, letter, word, previousRow, results):
     global _maxCost
     columns = len( word ) + 1
-    currentRow = [ previousRow[0] + 1 ]
     prefix+=letter
-
+    i = len(prefix)
+    currentRow = range(i, i+columns)
+    lo = max(1, i-_maxCost-1)
+    hi = min(i+_maxCost+1,columns)
     # Build one row for the letter, with a column for each letter in the target
     # word, plus one for the empty string at column 0
-    for column in xrange( 1, columns ):
+    for column in xrange(lo, hi):
 
         insertCost = currentRow[column - 1] + 1
         deleteCost = previousRow[column] + 1
@@ -53,14 +61,14 @@ def searchRecursive(node, prefix, letter, word, previousRow, results):
         else:
             replaceCost = previousRow[ column - 1 ]
 
-        currentRow.append(min(insertCost, deleteCost, replaceCost))
+        currentRow[column] = min(insertCost, deleteCost, replaceCost)
     # if the last entry in the row indicates the optimal cost is less than the
     # maximum cost, and there is a word in this trie node, then add it.
     if currentRow[-1] <= _maxCost and node[0]:
         results.append((prefix, currentRow[-1]))
         _maxCost = currentRow[-1]
         if _maxCost == 0: return
-    elif min( currentRow ) > _maxCost: return
+    elif min(currentRow[lo:hi] ) > _maxCost: return
     # if any entries in the row are less than the maximum cost, then
     # recursively search each branch of the trie
     for subNode in node[2]:
@@ -89,10 +97,7 @@ def filterText(text):
     if len(result)>0: yield result
 
 if __name__ == "__main__":
-    import sys, time, cProfile, pstats, StringIO
-    pr = cProfile.Profile()
-    pr.enable()
-    start = time.time()
+    print("Loaded, time: %f s" % (time.time() - start))
     with open(sys.argv[1], "r") as f:
         for line in f:
             line = line.decode("utf-8")
