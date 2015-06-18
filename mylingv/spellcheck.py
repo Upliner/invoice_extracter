@@ -87,7 +87,7 @@ def fixword(word):
 
 def filterText(text):
     result = u""
-    for word in re.finditer(ur"[а-я0-9]+", text, re.IGNORECASE):
+    for word in re.finditer(ur"[а-яА-Я0-9]+", text, re.IGNORECASE):
         word = fixword(word.group(0))
         if word == None:
             if len(result)>0: yield result; result = u""

@@ -1,6 +1,6 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
-import pyparsing as pp
+import pyparsing as pp, re
 from spellcheck import filterText
 
 pp.ParserElement.setDefaultWhitespaceChars(u" .,\t\n\r\u00a0")
@@ -103,8 +103,12 @@ def searchSums(text):
 
 def searchSumsFiltered(text):
     for seq in filterText(text):
-        for pr, start, end in sumParse.scanString(seq):
-            yield pr[0]
+        rr = re.match(ur"([\d\s]*|руб[а-я]*|коп[а-я]*)*([а-я\d ]*)", seq)
+        if rr == None: continue
+        try:
+            pr = sumParse.parseString(rr.group(2))
+        except pp.ParseException: pass
+        else: yield pr[0]
 
 
 def test(expected, s):
