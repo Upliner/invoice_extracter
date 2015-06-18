@@ -1,7 +1,7 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
 
-import os, sys, xlrd, re, io, subprocess, urllib, urllib2, argparse, datetime, time, math
+import os, sys, xlrd, re, io, subprocess, urllib, urllib2, argparse, datetime, time, math, socket
 from pdfminer.psparser import PSLiteral
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfdocument import PDFDocument
@@ -14,6 +14,8 @@ from PIL import Image, ImageOps
 from io import BytesIO
 from mylingv import searchSums, searchSumsFiltered
 from xml.sax.saxutils import unescape
+
+socket.setdefaulttimeout(10)
 
 verbose = False
 strict = False
