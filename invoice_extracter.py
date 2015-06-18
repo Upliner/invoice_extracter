@@ -135,7 +135,7 @@ checkDict = { u"ИНН": checkInn, u"КПП": checkKpp, u"БИК": checkBic, u"�
 def fillField(pr, fld, value):
     if value == None: return
     ourVal = pr.our.get(fld)
-    if fld == u"ИНН" and value == ourVal: return
+    if fld in [u"ИНН", u"р/с"] and value == ourVal: return
     oldVal = pr.get(fld)
     if isErr(oldVal): return
     if value == oldVal: return
@@ -444,8 +444,8 @@ def processText(text, pr, allowNewlines = False):
             fillField(pr, fld, val.group(1).replace(u"О", "0"))
 
     rr = re.search(ur"^\s*%s).*" % inv_base, text, drp | re.MULTILINE)
-    if rr: fillField(pr, u"Счет", re.sub(ur"^(Сч[её]т(?: на оплату)?) (?:не|м[9в]) ", ur"\1 № ",
-                     stripInvoiceNumber(rr.group(0).strip()), flags=drp))
+    if rr: fillField(pr, u"Счет",
+                     stripInvoiceNumber(rr.group(0).strip()))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
     if u"ИНН" not in pr and u"КПП" not in pr:
