@@ -103,7 +103,7 @@ def searchSums(text):
 
 def searchSumsFiltered(text):
     for seq in filterText(text):
-        rr = re.match(ur"([\d\s]*|руб[а-я]*|коп[а-я]*)*([а-я\d ]*)", seq)
+        rr = re.match(ur"([\d\s]+|руб[а-я]*|коп[а-я]*)*([а-я\d ]*)", seq)
         if rr == None: continue
         try:
             pr = sumParse.parseString(rr.group(2))
