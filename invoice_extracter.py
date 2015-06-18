@@ -438,6 +438,11 @@ def findBankAccounts(text, pr):
 
 bndry = u"(?:\\b|[a-zA-Zа-яА-ЯёЁ ])"
 
+def hasNonOurs(pr, fld):
+    val = pr.get(fld)
+    if val == None: return False
+    return val != our.get(fld)
+
 def processText(text, pr, allowNewlines = False):
     if not u"р/с" in pr:
         findBankAccounts(text, pr)
@@ -453,19 +458,19 @@ def processText(text, pr, allowNewlines = False):
                      stripInvoiceNumber(rr.group(0).strip()))
 
     # Поиск находящихся рядом пар ИНН/КПП с совпадающими первыми четырьмя цифрами
-    if u"ИНН" not in pr and u"КПП" not in pr:
+    if u"ИНН" not in pr and not hasNonOurs(pr, u"КПП"):
         results = re.findall(ur"[^0-9О]([0-9О]{10}) *[\\\[\]\|/ ] *([0-9О]{9})\b", text, drp)
         results = [[v.replace(u"О", "0") for v in r] for r in results]
         for inn, kpp in results:
             if inn[0:4] == kpp[0:4]:
                 fillField(pr, u"ИНН", inn)
                 fillField(pr, u"КПП", kpp)
-        if len(results)>0 and u"ИНН" not in pr and u"КПП" not in pr:
+        if u"ИНН" not in pr:
             for inn, kpp in results:
                if inn[0:2] == kpp[0:2]:
                    fillField(pr, u"ИНН", inn)
                    fillField(pr, u"КПП", kpp)
-        if len(results)>0 and u"ИНН" not in pr and u"КПП" not in pr:
+        if u"ИНН" not in pr:
             # Пар с совпадающими первыми цифрами не найдено, вставляем любые пары
             for inn, kpp in results:
                 fillField(pr, u"ИНН", inn)
@@ -478,12 +483,12 @@ def processText(text, pr, allowNewlines = False):
         for rm in re.finditer(u"\\b([0-9О]{10}|[0-9О]{12})\\b" + bndry, text, drp):
             fillField(pr, u"ИНН", rm.group(1).replace(u"О", "0"))
 
-    if u"БИК" not in pr:
+    if not hasNonOurs(pr, "БИК"):
         for rm in re.finditer(u"\\b([0О]4[0-9О]{7})\\b" + bndry, text, drp):
             fillField(pr, u"БИК", rm.group(1).replace(u"О", "0"))
 
     # Ищем КПП только если ИНН десятизначный
-    if u"КПП" not in pr and (u"ИНН" not in pr or len(pr[u"ИНН"]) == 10):
+    if not hasNonOurs(pr, u"КПП") and (u"ИНН" not in pr or len(pr[u"ИНН"]) == 10):
         for rm in re.finditer(u"\\b([0-9О]{9})" + bndry, text, drp):
             val = rm.group(1).replace(u"О", "0")
             if val == pr.get(u"БИК"): continue
@@ -896,7 +901,7 @@ if __name__ == '__main__':
                     finalizeAndCheck(pr)
                     printMainInvoiceData(pr, sys.stdout)
                 finally:
-                    for err in pr.errs: print(err)
+                    for err in pr.errs: print(err.encode("utf-8"))
                 oneC.writeDocument(pr)
     finally:
         oneC.close()
