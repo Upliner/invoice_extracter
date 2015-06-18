@@ -1,7 +1,7 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
 
-import os, sys, xlrd, re, io, subprocess, urllib, urllib2, argparse, datetime, time, math
+import os, sys, xlrd, re, io, subprocess, urllib, urllib2, argparse, datetime, time, math, socket
 from pdfminer.psparser import PSLiteral
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfdocument import PDFDocument
@@ -15,8 +15,11 @@ from io import BytesIO
 from mylingv import searchSums, searchSumsFiltered
 from xml.sax.saxutils import unescape
 
+socket.setdefaulttimeout(10)
+
 verbose = False
 strict = False
+debug = False
 
 devnull = open(os.devnull, "w")
 
@@ -33,6 +36,8 @@ def parseArguments():
                    help="specify requisites file")
     parser.add_argument("--strict", action='store_true', dest="strict",
                    help="remove KPP and coracc from output when mismatches with federal database")
+    parser.add_argument("--debug", action='store_true', dest="debug",
+                   help="Output PNG and TXT files of OCR processing")
     parser.add_argument("--inn", type=str, default = None, help="specify INN code")
     parser.add_argument("--kpp", type=str, default = None, help="specify KPP code")
     parser.add_argument("--acc", type=str, default = None, help="specify bank account")
@@ -508,7 +513,6 @@ def processText(text, pr, allowNewlines = False):
                     pr[u"СуммаНДС"] = num
 
 def processImage(image, pr):
-    debug = False
     if image == None: return
     def doProcess():
         text = image_to_string(image, lang="rus+rusnum").decode("utf-8")
@@ -528,7 +532,6 @@ def processImage(image, pr):
         doProcess()
 
 def pdfToTextPoppler(pr):
-    debug = False
     sp = subprocess.Popen(["pdftotext", "-layout", pr.filename, "-"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     txtdata, stderrdata = sp.communicate()
     if sp.poll() != 0:
@@ -538,7 +541,6 @@ def pdfToTextPoppler(pr):
     return txtdata.decode("utf-8")
 
 def processPDF(f, pr):
-    debug = False
     parser = PDFParser(f)
     document = PDFDocument(parser)
     rsrcmgr = PDFResourceManager()
@@ -586,7 +588,6 @@ def processExcel(pr):
         processText(text, pr)
 
 def processMsWord(pr):
-    debug = False
     sp = subprocess.Popen(["antiword", "-x", "db", pr.filename], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     docdata, stderrdata = sp.communicate()
     docdata = unescape(re.sub(r"</?[^>]+>", "\n", docdata))
@@ -875,6 +876,7 @@ if __name__ == '__main__':
 
     verbose = args.verbose
     strict  = args.strict
+    debug   = args.debug
 
     errs = []
     if not checkOur(our, errs):
