@@ -519,6 +519,7 @@ def processText(text, pr, allowNewlines = False):
                     pr[u"СуммаНДС"] = num
 
 def processImage(image, pr):
+    if image == None: return
     if debug: imgnam = "invext-debug.tif"
     else: imgnam = tempfile.NamedTemporaryFile(prefix="invext_").name + ".tif"
     image.save(imgnam)
@@ -917,6 +918,7 @@ if __name__ == '__main__':
                 try:
                     finalizeAndCheck(pr)
                     printMainInvoiceData(pr, sys.stdout)
+                    sys.stdout.flush()
                 finally:
                     for err in pr.errs: print(err.encode("utf-8"))
                 oneC.writeDocument(pr)
