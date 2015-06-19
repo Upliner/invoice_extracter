@@ -4,8 +4,11 @@
 tesseract-ocr tesseract-ocr-rus python-pil antiword python-pyparsing poppler-utils
 
 Версия tesseract должна быть не ниже 3.03
-Также необходимо скопировать файл rusnum.traineddata в директорию tessdata, которая
+
+Установка:
+* Файл rusnum.traineddata скопировать в директорию tessdata, которая
 может находиться по адресу /usr/share/tesseract-ocr/tessdata либо /usr/share/tessdata
+* Файл deskew скопировать в любую директорию, обозначенную в $PATH
 
 Запуск программы:
 python invoice_extracter.py [параметры] файлы_счетов

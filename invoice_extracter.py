@@ -1,7 +1,7 @@
 #!/usr/bin/python2
 # -*- coding: utf-8
 
-import os, sys, xlrd, re, io, subprocess, urllib, urllib2, argparse, datetime, time, math, socket
+import os, sys, xlrd, re, io, urllib, urllib2, argparse, datetime, time, math, socket, tempfile
 from pdfminer.psparser import PSLiteral
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfdocument import PDFDocument
@@ -12,6 +12,7 @@ from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTTextContainer, LT
 from pytesseract import image_to_string
 from PIL import Image, ImageOps
 from io import BytesIO
+from subprocess import Popen, PIPE
 from mylingv import searchSums, searchSumsFiltered
 from xml.sax.saxutils import unescape
 
@@ -518,26 +519,42 @@ def processText(text, pr, allowNewlines = False):
                     pr[u"СуммаНДС"] = num
 
 def processImage(image, pr):
-    if image == None: return
-    def doProcess():
-        text = image_to_string(image, lang="rus+rusnum").decode("utf-8")
+    if debug: imgnam = "invext-debug.tif"
+    else: imgnam = tempfile.NamedTemporaryFile(prefix="invext_").name + ".tif"
+    image.save(imgnam)
+    try:
+        # Убираем поворот
+        sp = Popen(["deskew","-b", "ffffff", "-o", imgnam, imgnam], stdout=PIPE, stderr=PIPE)
+        stdoutdata, stderrdata = sp.communicate()
+        if sp.poll() != 0:
+            pr.errs.append("Unable to deskew image, errcode is %i" % sp.poll())
+            pr.errs.append(stdoutdata)
+            pr.errs.append(stderrdata)
+        # Увеличиваем маленькие изображения
+        if image.size[0]*image.size[1] < 8000000:
+            sp = Popen(["convert", imgnam, "-filter", "Cubic", "-resize", "300%", imgnam], stdout=None, stderr=PIPE)
+            stderrdata = sp.communicate()[1]
+            if sp.poll() != 0:
+                pr.errs.append("Unable to scale image, errcode is %i" % sp.poll())
+                pr.errs.append(stderrdata)
+        # Распознаём изображение
+        sp = Popen(["tesseract", "-l", "rus+rusnum" , imgnam, "-"], stdout=PIPE, stderr=PIPE)
+        text, stderrdata = sp.communicate()
+        if sp.poll() != 0:
+            pr.errs.append("Call to tesseract failed, errcode is %i" % sp.poll())
+            pr.errs.append(stderrdata)
+            return
         if debug:
             with open("invext-debug.txt","w") as f:
-                f.write(text.encode("utf-8"))
-            image.save("invext-debug.png", "PNG")
-        processText(text, pr)
-    # Увеличиваем маленькие изображения
-    if hasIncompleteFields(pr) and image.size[0]*image.size[1] < 8000000:
-        multiplier = 3
-        image = image.resize(tuple([int(i * multiplier) for i in image.size]), Image.BICUBIC)
-    doProcess()
-    if hasIncompleteFields(pr) and image.mode == "RGB":
-        # Убираем синие подписи и печати
-        image = ImageOps.autocontrast(image).convert("L", (-0.5,-0.5,2,0))
-        doProcess()
+                f.write(text)
+        processText(text.decode("utf-8"), pr)
+    finally:
+        if not debug:
+            try: os.remove(imgnam)
+            except OSError: pass
 
 def pdfToTextPoppler(pr):
-    sp = subprocess.Popen(["pdftotext", "-layout", pr.filename, "-"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    sp = Popen(["pdftotext", "-layout", pr.filename, "-"], stdout=PIPE, stderr=PIPE)
     txtdata, stderrdata = sp.communicate()
     if sp.poll() != 0:
         pr.errs.append("Call to pdftotext failed, errcode is %i" % sp.poll())
@@ -593,7 +610,7 @@ def processExcel(pr):
         processText(text, pr)
 
 def processMsWord(pr):
-    sp = subprocess.Popen(["antiword", "-x", "db", pr.filename], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    sp = Popen(["antiword", "-x", "db", pr.filename], stdout=PIPE, stderr=PIPE)
     docdata, stderrdata = sp.communicate()
     docdata = unescape(re.sub(r"</?[^>]+>", "\n", docdata))
     if sp.poll() != 0:
