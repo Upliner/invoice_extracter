@@ -539,7 +539,7 @@ def processImage(image, pr):
                 pr.errs.append("Unable to scale image, errcode is %i" % sp.poll())
                 pr.errs.append(stderrdata)
         # Распознаём изображение
-        sp = Popen(["tesseract", "-l", "rus+rusnum" , imgnam, "-"], stdout=PIPE, stderr=PIPE)
+        sp = Popen(["tesseract", "-psm", "1", "-l", "rus+rusnum" , imgnam, "-"], stdout=PIPE, stderr=PIPE)
         text, stderrdata = sp.communicate()
         if sp.poll() != 0:
             pr.errs.append("Call to tesseract failed, errcode is %i" % sp.poll())

@@ -1,7 +1,7 @@
 Программа извлекает данные счетов на оплату покупателям
 
 Для работы программа требует следующие пакеты:
-tesseract-ocr tesseract-ocr-rus python-pil antiword python-pyparsing poppler-utils imagemagick
+tesseract-ocr tesseract-ocr-rus tesseract-ocr-osd python-pil antiword python-pyparsing poppler-utils imagemagick
 
 Версия tesseract должна быть не ниже 3.03
 
@@ -9,6 +9,12 @@ tesseract-ocr tesseract-ocr-rus python-pil antiword python-pyparsing poppler-uti
 * Файл rusnum.traineddata скопировать в директорию tessdata, которая
 может находиться по адресу /usr/share/tesseract-ocr/tessdata либо /usr/share/tessdata
 * Файл deskew скопировать в любую директорию, обозначенную в $PATH (например, /usr/local/bin)
+
+Если tesseract ставился не из репозитария, то вместо установки пакетов нужно вручную
+скачать и распаковать в tessdata следующие файлы:
+
+https://code.google.com/p/tesseract-ocr/downloads/detail?name=tesseract-ocr-3.02.rus.tar.gz
+https://code.google.com/p/tesseract-ocr/downloads/detail?name=tesseract-ocr-3.01.osd.tar.gz
 
 Запуск программы:
 python invoice_extracter.py [параметры] файлы_счетов
