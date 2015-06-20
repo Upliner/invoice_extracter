@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
 #define buflen 256
 #define btresh 80
 #define min(a,b) ((a)<(b)?(a):(b))
+
 char buf[buflen], *s;
 FILE *f;
 char *filename;
@@ -22,11 +25,13 @@ int shouldFilter(unsigned char* cur) {
      int red = cur[0];
      int green = cur[1];
      int blue = cur[2];
-     return blue*2-green/2-red/2 > 260;
+     return (blue*2-green/2-red/2 > 256) ? 1 : 0;
 }
 int main(int argc, char* argv[]) {
-    int w, h, i, x, y, start, end, fpos;
-    unsigned char *row, *cur;
+    int w, h, i, x, y, fpos;
+    int start, end; // Starts and ends of edited area
+    unsigned char *prevrow, *currow, *nextrow; // Rows of pixels
+    unsigned char *cur, *prevcur; // Current pixel
     if (argc < 2) {
         fprintf(stderr, "Usage: stampfilter image.ppm\n");
         return 1;
@@ -68,37 +73,55 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "Expected newline after color depth\n");
         return 1;
     }
-    row = malloc(w*3);
-    if (!row) {
+    prevrow = malloc(w);
+    currow  = malloc(w*3);
+    nextrow = malloc(w*3);
+    if (!prevrow || !currow || !nextrow) {
         fprintf(stderr, "Cannot allocate memory\n");
         return 1;
     }
-    for (y = 0; y < h; y++) {
+    memset(prevrow, 0, w);
+    fread(currow, 3, w, f);
+    start = end = -1;
+    fpos = 0;
+    for (y = 1; y < h; y++) {
         start = end = -1;
-        i = fread(row, 3, w, f);
+        i = fread(nextrow, 3, w, f);
         if (i < w) {
             fprintf(stderr, "Warning: unexpected end of file\n");
             return 0;
         }
-        for (x = 0, cur = row; x < w; x++, cur += 3)
-            if (shouldFilter(cur))
-                if (end == (x-1) || shouldFilter(cur+3)) {
+        for (x = 0, cur = currow, prevcur = prevrow; x < w; x++, prevcur++, cur += 3)
+            if (shouldFilter(cur)) {
+                /* If we should filter current pixel, check 8 neighbor pixels.
+                   Apply filter only if at least 4 of them are blue too */
+                int numpixels = 0;
+                numpixels += prevcur[-1] + prevcur[0] + prevcur[1]; // Previous row
+                numpixels += (end == (x-1)) ? 1 : shouldFilter(cur-3) + shouldFilter(cur+3); // Current row
+                if (numpixels < 4) // Next row
+                   numpixels += shouldFilter(&nextrow[(x-1)*3]) + shouldFilter(&nextrow[x*3]) + shouldFilter(&nextrow[(x+1)*3]);
+                if (numpixels >= 4) {
                     if (start == -1) start = x;
                     end = x;
                     cur[0] = cur[1] = cur[2] = 255;
                 }
+                *prevcur = 1;
+            } else *prevcur = 0;
         if (start != -1) {
             fpos = ftell(f);
-            if (fpos == -1) goto seekerr;
-            if (fseek(f, (start - w)*3, SEEK_CUR)) goto seekerr;
-            fwrite(row + start*3, 3, end - start, f);
+            if (fpos == -1) break;
+            if (fseek(f, (start - w*2)*3, SEEK_CUR)) { fpos = -1; break; }
+            fwrite(currow + start*3, 3, end - start, f);
             fseek(f, fpos, SEEK_SET);
         }
+        cur = currow;
+        currow = nextrow;
+        nextrow = cur;
     }
-    free(row);
-    return 0;
-    seekerr:
-    fprintf(stderr, "file seems to be unseekable\n");
-    free(row);
-    return 1;
+    if (fpos == -1)
+        fprintf(stderr, "File seems to be unseekable\n");
+    free(prevrow);
+    free(currow);
+    free(nextrow);
+    return fpos == -1 ? 1 : 0;
 }

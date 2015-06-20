@@ -524,13 +524,6 @@ def processImage(image, pr):
     else: imgnam = tempfile.NamedTemporaryFile(prefix="invext_").name + ".ppm"
     image.save(imgnam, "PPM")
     try:
-        # Убираем поворот
-        sp = Popen(["deskew","-b", "ffffff", "-o", imgnam, imgnam], stdout=PIPE, stderr=PIPE)
-        stdoutdata, stderrdata = sp.communicate()
-        if sp.poll() != 0:
-            pr.errs.append("Unable to deskew image, errcode is %i" % sp.poll())
-            pr.errs.append(stdoutdata)
-            pr.errs.append(stderrdata)
         # Убираем синие подписи и печати
         sp = Popen([os.path.join(os.path.dirname(__file__), "stampfilter"), imgnam], stdout=PIPE, stderr=PIPE)
         stdoutdata, stderrdata = sp.communicate()
@@ -544,6 +537,13 @@ def processImage(image, pr):
             if sp.poll() != 0:
                 pr.errs.append("Unable to scale image, errcode is %i" % sp.poll())
                 pr.errs.append(stderrdata)
+        # Убираем поворот
+        sp = Popen(["deskew","-b", "ffffff", "-o", imgnam, imgnam], stdout=PIPE, stderr=PIPE)
+        stdoutdata, stderrdata = sp.communicate()
+        if sp.poll() != 0:
+            pr.errs.append("Unable to deskew image, errcode is %i" % sp.poll())
+            pr.errs.append(stdoutdata)
+            pr.errs.append(stderrdata)
         # Распознаём изображение
         sp = Popen(["tesseract", "-psm", "1", "-l", "rus+rusnum" , imgnam, "-"], stdout=PIPE, stderr=PIPE)
         text, stderrdata = sp.communicate()
