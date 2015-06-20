@@ -442,7 +442,7 @@ bndry = u"(?:\\b|[a-zA-Zа-яА-ЯёЁ ])"
 def hasNonOurs(pr, fld):
     val = pr.get(fld)
     if val == None: return False
-    return val != our.get(fld)
+    return val != pr.our.get(fld)
 
 def processText(text, pr, allowNewlines = False):
     if not u"р/с" in pr:
