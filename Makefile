@@ -1,0 +1,1 @@
+stampfilter: stampfilter.c

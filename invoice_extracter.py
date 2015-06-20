@@ -520,9 +520,9 @@ def processText(text, pr, allowNewlines = False):
 
 def processImage(image, pr):
     if image == None: return
-    if debug: imgnam = "invext-debug.tif"
-    else: imgnam = tempfile.NamedTemporaryFile(prefix="invext_").name + ".tif"
-    image.save(imgnam)
+    if debug: imgnam = "invext-debug.ppm"
+    else: imgnam = tempfile.NamedTemporaryFile(prefix="invext_").name + ".ppm"
+    image.save(imgnam, "PPM")
     try:
         # Убираем поворот
         sp = Popen(["deskew","-b", "ffffff", "-o", imgnam, imgnam], stdout=PIPE, stderr=PIPE)
@@ -530,6 +530,12 @@ def processImage(image, pr):
         if sp.poll() != 0:
             pr.errs.append("Unable to deskew image, errcode is %i" % sp.poll())
             pr.errs.append(stdoutdata)
+            pr.errs.append(stderrdata)
+        # Убираем синие подписи и печати
+        sp = Popen([os.path.join(os.path.dirname(__file__), "stampfilter"), imgnam], stdout=PIPE, stderr=PIPE)
+        stdoutdata, stderrdata = sp.communicate()
+        if sp.poll() != 0:
+            pr.errs.append("Unable to apply antistamp filter to image, errcode is %i" % sp.poll())
             pr.errs.append(stderrdata)
         # Увеличиваем маленькие изображения
         if image.size[0]*image.size[1] < 8000000:
