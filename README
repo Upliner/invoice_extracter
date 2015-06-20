@@ -1,7 +1,7 @@
 Программа извлекает данные счетов на оплату покупателям
 
 Для работы программа требует следующие пакеты:
-tesseract-ocr tesseract-ocr-rus python-pil antiword python-pyparsing poppler-utils
+tesseract-ocr tesseract-ocr-rus python-pil antiword python-pyparsing poppler-utils imagemagick
 
 Версия tesseract должна быть не ниже 3.03
 
