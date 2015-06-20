@@ -533,7 +533,7 @@ def processImage(image, pr):
             pr.errs.append(stderrdata)
         # Увеличиваем маленькие изображения
         if image.size[0]*image.size[1] < 8000000:
-            sp = Popen(["convert", imgnam, "-filter", "Cubic", "-resize", "300%", imgnam], stdout=PIPE, stderr=PIPE)
+            sp = Popen(["convert", imgnam, "-filter", "Triangle", "-resize", "300%", imgnam], stdout=PIPE, stderr=PIPE)
             stdoutdata, stderrdata = sp.communicate()
             if sp.poll() != 0:
                 pr.errs.append("Unable to scale image, errcode is %i" % sp.poll())
