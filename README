@@ -8,7 +8,7 @@ tesseract-ocr tesseract-ocr-rus python-pil antiword python-pyparsing poppler-uti
 Установка:
 * Файл rusnum.traineddata скопировать в директорию tessdata, которая
 может находиться по адресу /usr/share/tesseract-ocr/tessdata либо /usr/share/tessdata
-* Файл deskew скопировать в любую директорию, обозначенную в $PATH
+* Файл deskew скопировать в любую директорию, обозначенную в $PATH (например, /usr/local/bin)
 
 Запуск программы:
 python invoice_extracter.py [параметры] файлы_счетов
