@@ -82,7 +82,10 @@ def fixword(word):
     if len(results) == 0: return None
     results.sort(lambda a,b:cmp(a[1],b[1]))
     if len(results)>1 and results[0][1] == results[1][1]:
-        return None # Есть разные варианты коррекции для слова
+        # Есть разные варианты коррекции для слова
+        # Если это плохо распознанное число, не выкидываем его из потока
+        # для избежения неправильного распознавания суммы прописью
+        return word
     return results[0][0]
 
 def filterText(text):
@@ -99,7 +102,7 @@ if __name__ == "__main__":
     with open(sys.argv[1], "r") as f:
         for line in f:
             line = line.decode("utf-8")
-            for word in re.finditer(ur"[а-я0-9]+", line, re.IGNORECASE):
+            for word in re.finditer(ur"[а-яА-Я0-9]+", line, re.IGNORECASE):
                 word = word.group(0)
                 fw = fixword(word)
                 if fw == None: continue
