@@ -530,6 +530,16 @@ def processText(text, pr, allowNewlines = False):
                 if num != None and abs(amtvat-num)<0.05:
                     pr[u"СуммаНДС"] = num
 
+    # Если найдена сумма НДС, но не найдено сумма к оплате, ищем по документу цифру
+    # составляющую НДС/0.18*1.18
+    if  (u"СуммаНДС" in pr and u"ИтогоСНДС" not in pr and "Итого" not in pr):
+        amtgross = pr[u"СуммаНДС"]/0.18*1.18
+        for nums in re.finditer(ur"\b([0-9'\-\.,\s]*)\b", text, drp):
+            for num in re.split(r"\t|     ", nums.group(0)):
+                num = parse(num)
+                if num != None and abs(amtgross-num)<0.1:
+                    pr[u"ИтогоСНДС"] = num
+
 def processImage(image, pr):
     if image == None: return
     if debug: imgnam = "invext-debug.ppm"
