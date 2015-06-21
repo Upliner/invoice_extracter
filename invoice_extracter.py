@@ -21,6 +21,10 @@ socket.setdefaulttimeout(10)
 verbose = False
 strict = False
 debug = False
+deskew = False
+scalefilter = "Cubic"
+antistamp = False
+autocontrast = False
 
 devnull = open(os.devnull, "w")
 
@@ -37,6 +41,14 @@ def parseArguments():
                    help="specify requisites file")
     parser.add_argument("--strict", action='store_true', dest="strict",
                    help="remove KPP and coracc from output when mismatches with federal database")
+    parser.add_argument("--deskew", action='store_true', dest="deskew",
+                   help="Deskew image before recognition")
+    parser.add_argument("--autocontrast", action='store_true', dest="autocontrast",
+                   help="Normalize contrast before recognition")
+    parser.add_argument("--antistamp", action='store_true', dest="antistamp",
+                   help="Remove blue stamps and signatures")
+    parser.add_argument("--scale", type=str, dest="scale", default = "Cubic",
+                   help="Specify scale filter (default: Cubic)")
     parser.add_argument("--debug", action='store_true', dest="debug",
                    help="Output PNG and TXT files of OCR processing")
     parser.add_argument("--inn", type=str, default = None, help="specify INN code")
@@ -522,28 +534,32 @@ def processImage(image, pr):
     if image == None: return
     if debug: imgnam = "invext-debug.ppm"
     else: imgnam = tempfile.NamedTemporaryFile(prefix="invext_").name + ".ppm"
+    if autocontrast: image = ImageOps.autocontrast(image)
     image.save(imgnam, "PPM")
     try:
-        # Убираем синие подписи и печати
-        sp = Popen([os.path.join(os.path.dirname(__file__), "stampfilter"), imgnam], stdout=PIPE, stderr=PIPE)
-        stdoutdata, stderrdata = sp.communicate()
-        if sp.poll() != 0:
-            pr.errs.append("Unable to apply antistamp filter to image, errcode is %i" % sp.poll())
-            pr.errs.append(stderrdata)
+        if antistamp: # Убираем синие подписи и печати
+            sp = Popen([os.path.join(os.path.dirname(__file__), "stampfilter"), imgnam], stdout=PIPE, stderr=PIPE)
+            stdoutdata, stderrdata = sp.communicate()
+            if sp.poll() != 0:
+                pr.errs.append("Unable to apply antistamp filter to image, errcode is %i" % sp.poll())
+                pr.errs.append(stderrdata)
+
         # Увеличиваем маленькие изображения
         if image.size[0]*image.size[1] < 8000000:
-            sp = Popen(["convert", imgnam, "-filter", "Triangle", "-resize", "300%", imgnam], stdout=PIPE, stderr=PIPE)
+            sp = Popen(["convert", imgnam, "-filter", scalefilter, "-resize", "300%", imgnam], stdout=PIPE, stderr=PIPE)
             stdoutdata, stderrdata = sp.communicate()
             if sp.poll() != 0:
                 pr.errs.append("Unable to scale image, errcode is %i" % sp.poll())
                 pr.errs.append(stderrdata)
-        # Убираем поворот
-        sp = Popen(["deskew","-b", "ffffff", "-o", imgnam, imgnam], stdout=PIPE, stderr=PIPE)
-        stdoutdata, stderrdata = sp.communicate()
-        if sp.poll() != 0:
-            pr.errs.append("Unable to deskew image, errcode is %i" % sp.poll())
-            pr.errs.append(stdoutdata)
-            pr.errs.append(stderrdata)
+
+        if deskew: # Убираем поворот
+            sp = Popen(["deskew","-b", "ffffff", "-o", imgnam, imgnam], stdout=PIPE, stderr=PIPE)
+            stdoutdata, stderrdata = sp.communicate()
+            if sp.poll() != 0:
+                pr.errs.append("Unable to deskew image, errcode is %i" % sp.poll())
+                pr.errs.append(stdoutdata)
+                pr.errs.append(stderrdata)
+
         # Распознаём изображение
         sp = Popen(["tesseract", "-psm", "1", "-l", "rus+rusnum" , imgnam, "-"], stdout=PIPE, stderr=PIPE)
         text, stderrdata = sp.communicate()
@@ -906,6 +922,11 @@ if __name__ == '__main__':
     verbose = args.verbose
     strict  = args.strict
     debug   = args.debug
+
+    autocontrast = args.autocontrast
+    antistamp    = args.antistamp
+    deskew       = args.deskew
+    scalefilter  = args.scale
 
     errs = []
     if not checkOur(our, errs):
