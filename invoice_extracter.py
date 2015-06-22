@@ -660,7 +660,7 @@ def getBicData(bic, errs):
     url = "http://www.bik-info.ru/bik_%s.html" % bic
     try:
         f = urllib2.urlopen(url)
-    except urllib2.URLError:
+    except (urllib2.URLError, socket.timeout) as e:
         errs.append(u"Ошибка: не удалось загрузить страницу %s" % url)
     page = f.read().decode("cp1251")
     f.close()
@@ -699,7 +699,7 @@ def requestCompanyInfoFedresurs(inn, errs):
             u"КПП": re.search(ur"КПП:</td>\s*<td>([0-9]{9})</td>", page, re.UNICODE).group(1),
             u"Наименование": re.search(ur"<td>Сокращённое фирменное наименование:</td>\s*<td>(.*?)</td>", page, re.UNICODE).group(1),
         }
-    except urllib2.URLError:
+    except (urllib2.URLError, socket.timeout) as e:
         errs.append(u"Ошибка: не удалось загрузить страницу %s" % url)
     except AttributeError:
         errs.append(u"Ошибка: не удалось распознать страницу %s" % url)
@@ -711,7 +711,7 @@ def requestCompanyNameIgk(inn, errs):
     url = "http://online.igk-group.ru/ru/home?inn=" + inn
     try:
         f = urllib2.urlopen(url)
-    except urllib2.URLError:
+    except (urllib2.URLError, socket.timeout) as e:
         errs.append(u"Ошибка: не удалось загрузить страницу %s" % url)
         return None
     page = f.read().decode("utf-8")
