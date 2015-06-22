@@ -753,7 +753,7 @@ def finalizeAndCheck(pr):
                             pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
                         pr[u"Корсчет"] = bicData[u"Корсчет"]
                 else:
-                    pr.errs.append(u"Ошибка: не совпадает корсчёт: в файле %s, в интернет-базе %s. Оставляю из файла" % (
+                    pr.errs.append(u"Ошибка: не совпадает корсчёт: в файле %s, в интернет-базе %s" % (
                         pr.get(u"Корсчет", u"пусто"), u"пусто" if len(bicData[u"Корсчет"]) == 0 else bicData[u"Корсчет"]))
                     if not strict and u"Корсчет" not in pr:
                         pr[u"Корсчет"] = bicData[u"Корсчет"]
@@ -763,7 +763,7 @@ def finalizeAndCheck(pr):
                 pr[u"Банк"] = bicData[u"Наименование"]
                 pr[u"Банк2"] = u"г. " + bicData[u"Город"]
         else:
-            pr.errs.append(u"Ошибка: не удалось получить данные по БИК %s" % pr[u"БИК"])
+            pr.errs.append(u"Ошибка: не удалось получить данные по БИК %s. Либо этот БИК удалён из базы ЦБ, либо распознан неверно" % pr[u"БИК"])
             if strict: deleteBank()
 
     if u"ИНН" in pr:
@@ -776,7 +776,7 @@ def finalizeAndCheck(pr):
                 ci = requestCompanyInfoFedresurs(pr[u"ИНН"], pr.errs)
         if ci != None:
             if ci[u"КПП"] != pr.get(u"КПП", u""):
-                pr.errs.append(u"Не совпадает КПП для %s: в файле %s, в интернет-базе %s. Оставляю из файла" % (
+                pr.errs.append(u"Не совпадает КПП для %s: в файле %s, в интернет-базе %s" % (
                         ci[u"Наименование"], pr.get(u"КПП", u"пусто"), ci[u"КПП"]))
                 if strict: del pr[u"КПП"]
                 elif u"КПП" not in pr: pr[u"КПП"] = ci[u"КПП"]
