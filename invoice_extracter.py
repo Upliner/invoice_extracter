@@ -22,9 +22,8 @@ verbose = False
 strict = False
 debug = False
 deskew = False
-scalefilter = "Cubic"
+scalefilter = "catrom"
 antistamp = False
-autocontrast = False
 
 devnull = open(os.devnull, "w")
 
@@ -43,12 +42,10 @@ def parseArguments():
                    help="remove KPP and coracc from output when mismatches with federal database")
     parser.add_argument("--deskew", action='store_true', dest="deskew",
                    help="Deskew image before recognition")
-    parser.add_argument("--autocontrast", action='store_true', dest="autocontrast",
-                   help="Normalize contrast before recognition")
     parser.add_argument("--antistamp", action='store_true', dest="antistamp",
                    help="Remove blue stamps and signatures")
-    parser.add_argument("--scale", type=str, dest="scale", default = "Cubic",
-                   help="Specify scale filter (default: Cubic)")
+    parser.add_argument("--scale", type=str, dest="scale", default = "catrom",
+                   help="Specify scale filter (default: catrom)")
     parser.add_argument("--debug", action='store_true', dest="debug",
                    help="Output PNG and TXT files of OCR processing")
     parser.add_argument("--inn", type=str, default = None, help="specify INN code")
@@ -257,6 +254,11 @@ def checkBicAcc(pr, errs = None):
         showError()
         return False
     return True
+
+def extractPdfImageStream(pr, img):
+    filters = img.stream.get_filters()
+    if len(filters)>0 and filters[0][0].name == "DCTDecode":
+        return img.stream.get_rawdata()
 
 def extractPdfImage(pr, img):
     filters = img.stream.get_filters()
@@ -540,26 +542,25 @@ def processText(text, pr, allowNewlines = False):
                 if num != None and abs(amtgross-num)<0.1:
                     pr[u"ИтогоСНДС"] = num
 
-def processImage(image, pr):
-    if image == None: return
+def processImage(data, pr):
+    if data == None: return
     if debug: imgnam = "invext-debug.ppm"
     else: imgnam = tempfile.NamedTemporaryFile(prefix="invext_").name + ".ppm"
-    if autocontrast: image = ImageOps.autocontrast(image)
-    image.save(imgnam, "PPM")
     try:
+        # Convert and postprocess images
+        sp = Popen(["convert", "-", "-normalize", "-contrast", "-contrast", "-filter", scalefilter, "-resize", "9000000@<", imgnam],
+            stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        stdoutdata, stderrdata = sp.communicate(data)
+        if sp.poll() != 0:
+            pr.errs.append("Unable to convert image, errcode is %i" % sp.poll())
+            pr.errs.append(stderrdata)
+            return
+
         if antistamp: # Убираем синие подписи и печати
             sp = Popen([os.path.join(os.path.dirname(__file__), "stampfilter"), imgnam], stdout=PIPE, stderr=PIPE)
             stdoutdata, stderrdata = sp.communicate()
             if sp.poll() != 0:
                 pr.errs.append("Unable to apply antistamp filter to image, errcode is %i" % sp.poll())
-                pr.errs.append(stderrdata)
-
-        # Увеличиваем маленькие изображения
-        if image.size[0]*image.size[1] < 8000000:
-            sp = Popen(["convert", imgnam, "-filter", scalefilter, "-resize", "300%", imgnam], stdout=PIPE, stderr=PIPE)
-            stdoutdata, stderrdata = sp.communicate()
-            if sp.poll() != 0:
-                pr.errs.append("Unable to scale image, errcode is %i" % sp.poll())
                 pr.errs.append(stderrdata)
 
         if deskew: # Убираем поворот
@@ -621,7 +622,7 @@ def processPDF(f, pr):
                     for img in obj:
                         if (isinstance(img, LTImage) and
                                 img.x0<x0 and img.y0<y0 and img.x1>x1 and img.y1>y1):
-                            processImage(extractPdfImage(pr, img), pr)
+                            processImage(extractPdfImageStream(pr, img), pr)
     if hasIncompleteFields(pr):
         processText(pdfToTextPoppler(pr), pr)
 
@@ -829,7 +830,7 @@ def processFile(our, f):
     pr = ParseResult(our,f)
     ext = os.path.splitext(f)[1].lower()
     if (ext in ['.png','.bmp','.jpg','.jpeg','.gif','.tif','.tiff','.ppm']):
-        processImage(Image.open(f), pr)
+        with open(f, "rb") as ff: processImage(ff.read(), pr)
     elif (ext == '.pdf'):
         with open(f, "rb") as ff: processPDF(ff, pr)
     elif (ext in ['.xls', '.xlsx']):
@@ -933,7 +934,6 @@ if __name__ == '__main__':
     strict  = args.strict
     debug   = args.debug
 
-    autocontrast = args.autocontrast
     antistamp    = args.antistamp
     deskew       = args.deskew
     scalefilter  = args.scale
