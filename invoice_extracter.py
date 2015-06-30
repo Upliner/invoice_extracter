@@ -2,6 +2,7 @@
 # -*- coding: utf-8
 
 import os, sys, xlrd, re, io, urllib, urllib2, argparse, datetime, time, math, socket, tempfile
+import xml.etree.ElementTree as et
 from pdfminer.psparser import PSLiteral
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfdocument import PDFDocument
@@ -24,6 +25,7 @@ debug = False
 deskew = False
 scalefilter = "catrom"
 antistamp = False
+ocrbox = False
 
 devnull = open(os.devnull, "w")
 
@@ -47,7 +49,9 @@ def parseArguments():
     parser.add_argument("--scale", type=str, dest="scale", default = "catrom",
                    help="Specify scale filter (default: catrom)")
     parser.add_argument("--debug", action='store_true', dest="debug",
-                   help="Output PNG and TXT files of OCR processing")
+                   help="Output PPM and TXT files of OCR processing")
+    parser.add_argument("--ocrbox", action='store_true', dest="ocrbox",
+                   help="Export image boxes with found data")
     parser.add_argument("--inn", type=str, default = None, help="specify INN code")
     parser.add_argument("--kpp", type=str, default = None, help="specify KPP code")
     parser.add_argument("--acc", type=str, default = None, help="specify bank account")
@@ -572,20 +576,52 @@ def processImage(data, pr):
                 pr.errs.append(stderrdata)
 
         # Распознаём изображение
-        sp = Popen(["tesseract", "-psm", "1", "-l", "rus+rusnum" , imgnam, "-"], stdout=PIPE, stderr=PIPE)
+        tessParams = ["tesseract", "-psm", "1", "-l", "rus+rusnum" , imgnam, "-"]
+        if ocrbox: tessParams.append("hocr")
+        sp = Popen(tessParams, stdout=PIPE, stderr=PIPE)
         text, stderrdata = sp.communicate()
         if sp.poll() != 0:
             pr.errs.append("Call to tesseract failed, errcode is %i" % sp.poll())
             pr.errs.append(stderrdata)
             return
+        if ocrbox:
+           idxBody = text.rindex("</body>")
+           idxDiv = text.rindex("</div>", 0, idxBody) + 6
+           hocr = et.fromstring(text[0:idxDiv]+"</body></html>")
+           text = text[idxDiv:idxBody]
         if debug:
             with open("invext-debug.txt","w") as f:
                 f.write(text)
+
         processText(text.decode("utf-8"), pr)
+        if ocrbox: makeOcrBoxes(pr, hocr, imgnam)
     finally:
         if not debug:
             try: os.remove(imgnam)
             except OSError: pass
+
+def makeOcrBoxes(pr, hocr, imgnam):
+    words = {}
+    nums = {}
+    basename = os.path.basename(pr.filename)
+    for i in pr.items(): words[i[1]] = i[0].replace("/", "_")
+    for span in hocr.iter("{http://www.w3.org/1999/xhtml}span"):
+        if span.attrib.get("class") != "ocrx_word": continue
+        fld = words.get(span.text)
+        if fld == None: continue
+        rr = re.match(r"bbox (\d*) (\d*) (\d*) (\d*)", span.attrib.get("title"))
+        if rr == None: continue
+        x0, y0, x1, y1 = [int(rr.group(i)) for i in range(1, 5)]
+        num = nums.get(fld, 0) + 1
+        nums[fld] = num
+        filename = "%s-%s-%i.png" % (basename, fld, num)
+        sp = Popen(["convert", imgnam, "-crop", "%ix%i+%i+%i" % (x1-x0, y1-y0, x0, y0), filename],
+            stdout=PIPE, stderr=PIPE)
+        stdoutdata, stderrdata = sp.communicate()
+        if sp.poll() != 0:
+            pr.errs.append("Unable to crop image, errcode is %i" % sp.poll())
+            pr.errs.append(stderrdata)
+            return
 
 def pdfToTextPoppler(pr):
     sp = Popen(["pdftotext", "-layout", pr.filename, "-"], stdout=PIPE, stderr=PIPE)
@@ -933,6 +969,7 @@ if __name__ == '__main__':
     verbose = args.verbose
     strict  = args.strict
     debug   = args.debug
+    ocrbox  = args.ocrbox
 
     antistamp    = args.antistamp
     deskew       = args.deskew
