@@ -129,6 +129,21 @@ def parse(num):
     except ValueError:
        return None
 
+def innerText(elem):
+    return "" if elem.text == None else elem.text + "".join([innerText(child) for child in list(elem)])
+
+def parsebbox(elem):
+    rr = re.match(r"bbox (\d*) (\d*) (\d*) (\d*)", elem.attrib.get("title"))
+    if rr == None: return None
+    return tuple([int(rr.group(i)) for i in range(1, 5)])
+
+def iterHocrWords(hocr):
+    return (span for span in hocr.iter("{http://www.w3.org/1999/xhtml}span")
+        if span.attrib.get("class") == "ocrx_word")
+
+def expandbbox(a, b):
+    return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+
 innChk = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
 
 # Проверка полей
@@ -343,6 +358,33 @@ def processPdfLine(pdf, pl, pr):
         return (val, obj)
     processCellContent(content, getValueToTheRight, pl, pr)
 
+def processHocr(pr, hocr):
+    curbbox = [None]
+    def getValueToTheRight(bbox):
+        y = (bbox[1] + bbox[3]) / 2
+        result = None
+        for w in iterHocrWords(hocr):
+            bbox2 = parsebbox(w)
+            if bbox2 == None: continue
+            if bbox2[1] > y or bbox2[3] < y or bbox2[0] <= bbox[0]: continue
+            if result != None and result[1][0] <= bbox2[0]: continue
+            result = (w, bbox2)
+        if result == None: return (None,None)
+        if curbbox[0] == None: curbbox[0] = result[1]
+        else: curbbox[0] = expandbbox(curbbox[0], result[1])
+        return (innerText(result[0]), result[1])
+    for span in iterHocrWords(hocr):
+        bbox = parsebbox(span)
+        if bbox == None: continue
+        content = innerText(span).strip()
+        if content == "": continue
+        fld = processCellContent(content, getValueToTheRight, bbox, pr)
+        if fld != None:
+            if fld == u"Счет" and curbbox[0] != None:
+                curbbox[0] = expandbbox(curbbox[0], bbox)
+            pr.bboxes.append((fld, curbbox[0] or bbox))
+        curbbox[0] = None
+
 # Шаблон для поиска номера счёта
 inv_base = ur"Сч[её]т\s*(на\sоплату|№|N|.*?\bот\s[0-9][0-9]?[\.\s]|.*?\bДата [0-9]{2}.[0-9]{2}.[0-9]{2}[0-9]{2}?"
 
@@ -368,21 +410,21 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             if rm == None: return
             checkInn(rm.group(1))
             fillField(pr, u"ИНН", rm.group(1))
-            return
+            return u"ИНН"
         fillField(pr, u"ИНН", rm.group(1))
         fillField(pr, u"КПП", rm.group(2))
-        return
+        return u"ИНН_КПП"
 
     for fld in [u"ИНН", u"КПП", u"БИК"]:
         if re.match(u"[^a-zA-Zа-яА-ЯёЁ]?"  + fld + r"\b", content, drp):
             val = getSecondValue()
-            if val == None: return
+            if val == None: return None
             rm = re.match("[0-9]+", val)
-            if not rm: return
+            if not rm: return None
             val = rm.group(0)
-            if val == pr.our.get(fld): return
+            if val == pr.our.get(fld): return None
             fillField(pr, fld, val)
-            return
+            return fld
 
     rr = re.search(ur"%s|$)" % inv_base, content, drp)
     if rr:
@@ -393,16 +435,21 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
             text += val
             val, cell = getValueToTheRight(cell)
         fillField(pr, u"Счет", stripInvoiceNumber(text.strip().replace("\n"," ").replace("  "," ")))
-        return
+        return u"Счет"
 
-    if re.search(ur"\sруб", content, drp): findSumsInWords(content, pr)
+    if re.search(ur"\sруб", content, drp):
+        if findSumsInWords(content, pr): return "СуммаПрописью"
+
     if (re.match(u"Итого|Всего|Сумма", content, drp) and
             (re.search(u"(с|без)\s*НДС", content, drp) or not u"НДС" in content)):
         if ":" in content: val = getSecondValue(":")
         else: val = getValueToTheRight(firstCell)[0]
-        if val == None: return
-        fillTotal(pr, parse(val))
-        return
+        if val == None: return None
+        val = parse(val)
+        if val != None:
+            fillTotal(pr, val)
+            return u"Итого"
+        return None
 
     if u"НДС" in content:
         checkWithoutVat(pr, content)
@@ -411,14 +458,17 @@ def processCellContent(content, getValueToTheRight, firstCell, pr):
         rr = re.search(vatIntro + vatPercentRe, content, drp)
         if rr and (rr.group(1) != None or rr.group(2) != None): # Возможно, сумма НДС находится в другой ячейке
             val = getValueToTheRight(firstCell)[0]
-            if val == None: return
+            if val == None: return None
             if (re.match(u"Без", val, drp)):
                 fillField(pr, u"СтавкаНДС", u"БезНДС")
-                return 
-            fillField(pr, u"СуммаНДС", parse(val))
-            return
+                return None
+            val = parse(val)
+            if val != None:
+                fillField(pr, u"СуммаНДС", val)
+                return u"СуммаНДС"
+            return None
 
-    findBankAccounts(content, pr)
+    return findBankAccounts(content, pr)
 
 def hasIncompleteFields(pr):
     if u"ИтогоСНДС" not in pr and u"Итого" not in pr: return True
@@ -427,9 +477,10 @@ def hasIncompleteFields(pr):
     return False
 
 def findSumsInWords(text, pr, func = searchSums):
+    result = False
     for psum in func(text):
         if epsilonEquals(psum, pr.get(u"Итого")):
-           del pr[u"Итого"]
+            del pr[u"Итого"]
         elif epsilonEquals(psum, pr.get(u"СуммаНДС")):
             continue
 
@@ -445,15 +496,23 @@ def findSumsInWords(text, pr, func = searchSums):
 
         fillField(pr, u"ИтогоСНДС", psum)
         pr[u"СуммаПрописью"] = True
+        result = True
+    return result
 
 def findBankAccounts(text, pr):
+    results = []
     for w in re.finditer(u"[0-9О]{4} *[0-9О]81[0О] *[0-9О]{4} *[0-9О]{4} *[0-9О]{4}\\b", text, drp):
         w = w.group(0).replace(" ","").replace(u"О", "0") # Многие OCR-движки путают букву О с нулём
         if w[5:8] == "810":
             if w[0] == "4":
                 fillField(pr, u"р/с", w)
+                results.append(u"р_c")
             if w[0:5] == "30101":
                 fillField(pr, u"Корсчет", w)
+                results.append(u"Корсчет")
+
+    if len(results) == 0: return None
+    else: return u", ".join(results)
 
 bndry = u"(?:\\b|[a-zA-Zа-яА-ЯёЁ ])"
 
@@ -589,6 +648,8 @@ def processImage(data, pr):
            idxDiv = text.rindex("</div>", 0, idxBody) + 6
            hocr = et.fromstring(text[0:idxDiv]+"</body></html>")
            text = text[idxDiv:idxBody]
+           pr.bboxes = []
+           processHocr(pr, hocr)
         if debug:
             with open("invext-debug.txt","w") as f:
                 f.write(text)
@@ -602,19 +663,22 @@ def processImage(data, pr):
 
 def makeOcrBoxes(pr, hocr, imgnam):
     words = {}
-    nums = {}
+    bboxes = set((i[1] for i in pr.bboxes))
     basename = os.path.basename(pr.filename)
     for i in pr.items(): words[i[1]] = i[0].replace("/", "_")
-    for span in hocr.iter("{http://www.w3.org/1999/xhtml}span"):
-        if span.attrib.get("class") != "ocrx_word": continue
-        fld = words.get(span.text)
+    for span in iterHocrWords(hocr):
+        fld = words.get(innerText(span))
         if fld == None: continue
-        rr = re.match(r"bbox (\d*) (\d*) (\d*) (\d*)", span.attrib.get("title"))
-        if rr == None: continue
-        x0, y0, x1, y1 = [int(rr.group(i)) for i in range(1, 5)]
+        bbox = parsebbox(span)
+        if bbox == None: continue
+        if bbox in bboxes: continue # Ячейка уже была обработана
+        pr.bboxes.append((fld, bbox))
+
+    nums = {}
+    for fld, (x0,y0,x1,y1) in pr.bboxes:
         num = nums.get(fld, 0) + 1
         nums[fld] = num
-        filename = "%s-%s-%i.png" % (basename, fld, num)
+        filename = u"%s-%s-%i.png" % (basename, fld, num)
         sp = Popen(["convert", imgnam, "-crop", "%ix%i+%i+%i" % (x1-x0, y1-y0, x0, y0), filename],
             stdout=PIPE, stderr=PIPE)
         stdoutdata, stderrdata = sp.communicate()
@@ -641,13 +705,10 @@ def processPDF(f, pr):
     for page in PDFPage.create_pages(document):
         interpreter.process_page(page)
         layout = daggr.get_result()
-        x0, y0, x1, y1 = (sys.maxint, sys.maxint, -sys.maxint, -sys.maxint) # Text bbox
+        bbox = (sys.maxint, sys.maxint, -sys.maxint, -sys.maxint) # Text bbox
         for obj in layout:
             if isinstance(obj, LTTextBox):
-                x0 = min(x0, obj.x0)
-                y0 = min(y0, obj.y0)
-                x1 = max(x1, obj.x1)
-                y1 = max(y1, obj.y1)
+                bbox = expandbbox(bbox, (obj.x0, obj.y0, obj.x1, obj.y1))
                 for line in obj:
                     if isinstance(line, LTTextLine):
                         processPdfLine(layout, line, pr)
@@ -657,7 +718,7 @@ def processPDF(f, pr):
                 if isinstance(obj, LTFigure):
                     for img in obj:
                         if (isinstance(img, LTImage) and
-                                img.x0<x0 and img.y0<y0 and img.x1>x1 and img.y1>y1):
+                                img.x0<bbox[0] and img.y0<bbox[1] and img.x1>bbox[2] and img.y1>bbox[3]):
                             processImage(extractPdfImageStream(pr, img), pr)
     if hasIncompleteFields(pr):
         processText(pdfToTextPoppler(pr), pr)
