@@ -258,7 +258,7 @@ def checkBicAcc(pr, errs = None):
     def showError():
         errs.append(u"Некорректный ключ номера счёта: %s" % pr[u"р/с"])
 
-    if u"Корсчет" in pr:
+    if pr[u"БИК"][6:10] >= "050":
        prefix = pr[u"БИК"][6:10]
     else:
        prefix = "0" + pr[u"БИК"][4:6]
